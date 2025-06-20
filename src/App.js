@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import "./App.css";
+import { getImage } from './db'; // 按路径调整
+import ScoreSidebar from './ScoreSidebar';
 function CircularProgress({ pauseDuration, remainingTime }) {
   const circumference = 100; // 圆形进度条的周长为 100
   const progress = ((pauseDuration - remainingTime) / pauseDuration) * 100;
@@ -102,6 +104,53 @@ const App = () => {
 
     requestAnimationFrame(animate);  // 开始动画
   }, []);
+
+  const handleSelectScore = async (score) => {
+    if (!score) {
+      alert("谱子数据为空");
+      return;
+    }
+  
+    // 清理旧的 URL 对象
+    sheetImages.forEach(url => URL.revokeObjectURL(url));
+    setSheetImages([]);
+  
+    let images = [];
+    try {
+      if (score.imageKeys && Array.isArray(score.imageKeys) && score.imageKeys.length > 0) {
+        const blobs = await Promise.all(
+          score.imageKeys.map(async (key) => {
+            const blob = await getImage(key);
+            if (!blob) console.warn(`未找到图片：${key}`);
+            return blob;
+          })
+        );
+        images = blobs
+          .filter(blob => blob instanceof Blob)
+          .map(blob => URL.createObjectURL(blob));
+  
+        if (images.length === 0) {
+          alert("无法从本地加载谱子图片，可能已被浏览器清除。");
+          return;
+        }
+      } else if (score.images && Array.isArray(score.images) && score.images.length > 0) {
+        images = score.images;
+      } else {
+        alert("该谱子不包含图像数据");
+        return;
+      }
+  
+      setSheetImages(images);
+      setMarkers(score.markers || []);
+      setTotalPages(images.length);
+      setCurrentMarkerIndex(0);
+      setIsScrolling(false);
+      setShowProgress(false);
+    } catch (error) {
+      console.error("加载谱子失败：", error);
+      alert("加载谱子失败，请检查数据或浏览器存储");
+    }
+  };
 
 
   const countdownIntervalRef = useRef(null);
@@ -469,8 +518,65 @@ const App = () => {
           </button>
         </div>
       </header>
-
       <div className="container">
+        <ScoreSidebar
+          onSelectScore={async (score) => {
+            console.log("被选中的谱子对象：", score);
+
+            if (!score) {
+              alert("谱子数据为空");
+              return;
+            }
+
+            let images = [];
+
+            // ✅ 读取图像：从 IndexedDB 或 fallback 到旧格式
+            if (score.imageKeys && Array.isArray(score.imageKeys)) {
+              try {
+                const blobs = await Promise.all(score.imageKeys.map(key => getImage(key)));
+
+                // 检查 blob 有效性
+                const validBlobs = blobs.filter(blob => blob instanceof Blob);
+
+                // ✅ 调试输出：检测哪些 key 加载失败
+                score.imageKeys.forEach((key, i) => {
+                  if (!blobs[i]) {
+                    console.warn(`未找到图片：${key}`);
+                  }
+                });
+
+                if (validBlobs.length === 0) {
+                  alert("无法从本地加载谱子图片，可能已被浏览器清除。");
+                  return;
+                }
+
+                images = validBlobs.map(blob => URL.createObjectURL(blob));
+              } catch (e) {
+                console.error("从 IndexedDB 加载图像失败：", e);
+                alert("谱子图像加载失败！");
+                return;
+              }
+            } else if (score.images && Array.isArray(score.images)) {
+              // fallback：支持老谱子（base64 图像）
+              images = score.images;
+            } else {
+              alert("该谱子不包含图像数据");
+              return;
+            }
+
+            // ✅ 正常设置状态
+            setSheetImages(images);
+            setMarkers(score.markers || []);
+            setTotalPages(images.length);
+            setCurrentMarkerIndex(0);
+            setIsScrolling(false);
+            setShowProgress(false);
+            setShowUpload(false);
+          }}
+          currentSheetImages={sheetImages}
+          currentMarkers={markers}
+        />
+
         <div className={`settings ${settingsOpen ? 'open' : ''}`}>
           <label>
             每页标记数量:

@@ -1,0 +1,100 @@
+.score-sidebar {
+    position: fixed;
+    top: 100px;
+    left: -200px;
+    width: 200px;
+    background: var(--surface-gradient);
+    border-right: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 0 16px 16px 0;
+    padding: 20px 16px;
+    box-shadow: 2px 4px 20px rgba(93, 58, 31, 0.08);
+    transition: left 0.4s ease;
+    z-index: 1200;
+    font-size: 14px;
+    color: var(--text-color);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding-bottom: 100px; /* 给底部多留空间，看起来更舒展 */
+  }
+  
+  .score-sidebar.open {
+    left: 0;
+  }
+  
+  .sidebar-toggle {
+    position: fixed;
+    top: 90px;
+    left: 0;
+    transform: translateY(-100%);
+    background: var(--primary-color);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 0 8px 8px 0;
+    cursor: pointer;
+    font-size: 13px;
+    z-index: 1300;
+    box-shadow: 0 2px 6px rgba(139, 69, 19, 0.2);
+  }
+  
+  .sidebar-header {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  
+  .sidebar-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--primary-color);
+  }
+  
+  .sidebar-header button {
+    padding: 6px 10px;
+    font-size: 13px;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .sidebar-header button:hover {
+    background-color: #7c3b0d;
+  }
+  
+  .score-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+  }
+  
+  .score-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+  }
+  
+  .score-list li span {
+    color: var(--accent-color);
+    cursor: pointer;
+  }
+  
+  .score-list li span:hover {
+    color: var(--primary-color);
+  }
+  
+  .score-list li button {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  
