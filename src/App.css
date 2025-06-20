@@ -1,38 +1,662 @@
-.App {
-  text-align: center;
+:root {
+  --primary-color: #6B4423;     /* 深咖啡色 */
+  --secondary-color: #C1A27B;   /* 暖棕色 */
+  --background-color: #FFFCF7;  /* 更浅的米白色 */
+  --text-color: #3D2B1F;        /* 深褐色文字 */
+  --nav-gradient: linear-gradient(135deg, #5D3A1F 0%, #A0522D 100%);
+  --surface-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 252, 247, 0.95));
+  --accent-color: #B37540;
+  --subtle-color: #F2E6DC;
+  --divider-color: #D8C8BB;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: var(--background-color);
+  background: 
+    radial-gradient(circle at 90% 10%, 
+      rgba(193, 162, 123, 0.08) 0%, 
+      rgba(255, 252, 247, 0.05) 30%, 
+      transparent 70%),
+    radial-gradient(circle at 10% 90%, 
+      rgba(193, 162, 123, 0.08) 0%, 
+      rgba(255, 252, 247, 0.05) 50%, 
+      transparent 70%),
+    /* 添加细微的点状图案 */
+    repeating-linear-gradient(45deg, 
+      rgba(193, 162, 123, 0.03) 0px, 
+      rgba(193, 162, 123, 0.03) 1px,
+      transparent 1px, 
+      transparent 10px
+    ),
+    repeating-linear-gradient(-45deg, 
+      rgba(193, 162, 123, 0.03) 0px, 
+      rgba(193, 162, 123, 0.03) 1px,
+      transparent 1px, 
+      transparent 10px
+    ),
+    linear-gradient(180deg, 
+      rgba(255, 255, 255, 0.95) 0%, 
+      rgba(255, 252, 247, 1) 100%);
+  overflow: hidden;
+  color: var(--text-color);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+.container {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  padding-top: 60px;
+  height: calc(100vh - 60px);
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+.settings {
+  position: fixed;
+  top: 70px;
+  right: -320px;
+  width: 280px;
+  background: var(--surface-gradient);
+  border-left: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 16px 0 0 16px;
+  padding: 24px 20px;
+  box-shadow: -2px 4px 20px rgba(93, 58, 31, 0.08);
+  transition: right 0.4s ease;
+  z-index: 1200;
+  font-size: 14px;
+  color: var(--text-color);
+  backdrop-filter: blur(12px);
+}
+
+.settings.open {
+  right: 0px;
+}
+
+.settings label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.settings input {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid var(--divider-color);
+  border-radius: 8px;
+  background-color: #fffdf8;
+  font-size: 13px;
+  color: var(--text-color);
+  transition: border-color 0.2s ease;
+}
+
+.settings input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 4px rgba(139, 69, 19, 0.2);
+}
+
+
+.scrollArea {
+  position: relative;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid #ccc;
+  margin: auto;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(139, 69, 19, 0.2) transparent; /* Firefox */
+}
+
+.scrollArea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollArea::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.scrollArea::-webkit-scrollbar-thumb {
+  background-color: rgba(139, 69, 19, 0.15);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollArea::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(139, 69, 19, 0.25);
+}
+
+.sheet {
+  width: 100%;
+  display: block;
+}
+
+.controlButton {
+  width: auto;
+  min-width: 100px;
+  padding: 14px 28px;
+  font-size: 16px;
+  background: linear-gradient(135deg, #8B4513 0%, #6B4423 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(139, 69, 19, 0.25);
+  transition: all 0.2s ease;
+}
+
+.controlButton:hover {
+  background: linear-gradient(135deg, #7c3b0d 0%, #593920 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 69, 19, 0.3);
+}
+
+.scroll-container {
+  overflow-y: auto;
+  height: 100vh;
+}
+
+.scroll-container.scrolling {
+  scroll-behavior: smooth;
+  transition: scroll-top 2s cubic-bezier(0.645, 0.045, 0.355, 1.000);
+  will-change: scroll-position;
+}
+
+.sheet-container {
+  position: relative;
+  width: 100%;
+}
+
+.sheet-marker {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  background-color: var(--primary-color);
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.sheet-marker::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-right: 13px solid white;
+}
+
+.marker-buttons {
+  display: none;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: column;
+  gap: 25px;
+}
+
+.marker-button {
+  width: 25px;
+  height: 25px;
+  background-color: var(--primary-color);
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.sheet-marker:hover .marker-buttons {
+  display: flex;
+  cursor: pointer;
+}
+
+.marker-button:first-child {
+  margin-bottom: 5px; /* 上方按钮 */
+}
+
+.marker-button:last-child {
+  margin-top: 5px; /* 下方按钮 */
+}
+
+.marker-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 100;
+}
+
+.progress-container {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+}
+
+.circular-progress {
+  position: fixed;
+  right: 100px;
+  bottom: 100px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(255, 252, 247, 0.9), rgba(255, 255, 255, 0.8));
+  box-shadow: 0 6px 12px rgba(93, 58, 31, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  backdrop-filter: blur(8px);
+}
+
+.circular-progress .progress-text {
+  position: absolute;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--primary-color);  /* 或 accent-color 更有强调感 */
+}
+
+.circular-progress .circle-bg {
+  stroke: var(--divider-color);
+}
+
+.circular-progress .circle-progress {
+  stroke: var(--accent-color);  /* 更温和的亮色 */
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+
+.time-display {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #000;
+  font-size: 12px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 20px;
+  background-color: #eee;
+  border-radius: 10px;
+  margin-top: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress {
+  height: 100%;
+  background-color: #4CAF50;
+  transition: width 50ms linear;
+}
+
+.circular-progress {
+  z-index: 1000;
+}
+
+.circular-progress svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.circular-progress text {
+  transform: rotate(90deg);
+  font-size: 8px;
+}
+
+.circular-progress {
+  position: absolute;
+  right: 150px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 80px;
+  height: 80px;
+}
+
+.progress-circle {
+  width: 50px;
+  height: 50px;
+  transform: rotate(-90deg);
+}
+
+.circle-bg {
+  stroke-width: 4;
+  stroke: #ccc;
+}
+
+.circle-progress {
+  stroke: #4caf50;
+  stroke-width: 4;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+  font-weight: bold;
+  color: #000000;
+}
+
+
+.sheet-marker:hover {
+  background-color: #7c3b0d;
+}
+
+.controlButtons {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  gap: 20px;
+  z-index: 100;
+}
+
+.upButton,
+.downButton {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(139, 69, 19, 0.15);
+  cursor: pointer;
+  border: none;
+  position: relative;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.upButton::after,
+.downButton::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  transition: border-color 0.2s ease;
+}
+
+.upButton::after {
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 12px solid var(--primary-color);
+}
+
+.downButton::after {
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 12px solid var(--primary-color);
+}
+
+.upButton:hover,
+.downButton:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 4px 12px rgba(139, 69, 19, 0.25);
+}
+
+.marker-status {
+  margin-top: 10px;
+  padding: 5px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #333;
+}
+
+/* 导航栏样式 */
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: var(--surface-gradient);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 2px 20px rgba(93, 58, 31, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-radius: 0 0 20px 20px;
+  z-index: 1000;
+  width: 70%;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.header-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Playfair Display', serif;
+  background: var(--nav-gradient);
+  -webkit-background-clip: text;
+  color: transparent;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+.header-actions {
+  margin-left: auto;  /* 将操作按钮推到右边 */
+}
+
+.header-title .icon {
+  font-size: 24px;
+  color: var(--primary-color);
+}
+
+.header-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.upload-button {
+  padding: 8px 16px;
+  background-color: var(--primary-color);
   color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(139, 69, 19, 0.2);
 }
 
-.App-link {
-  color: #61dafb;
+.upload-button:hover {
+  background-color: #7c3b0d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(139, 69, 19, 0.3);
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.settings-toggle {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color);
+  opacity: 0.8;
+  transition: all 0.2s ease;
 }
+
+.settings-toggle:hover {
+  opacity: 1;
+  transform: rotate(30deg);
+}
+
+/* 上传区域样式 */
+.upload-area {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  max-width: 600px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(10px);
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  z-index: 1001;
+  display: none;
+}
+
+.upload-area.show {
+  display: block;
+}
+
+.upload-dropzone {
+  border: 2px dashed var(--secondary-color);
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.upload-dropzone:hover {
+  background: rgba(210, 180, 140, 0.1);
+  border-color: var(--primary-color);
+}
+
+.upload-preview {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.preview-item {
+  position: relative;
+  aspect-ratio: 3/4;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: move;
+  transition: transform 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.preview-item:hover {
+  transform: translateY(-2px);
+}
+
+.preview-order {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 24px;
+  height: 24px;
+  background: rgba(26, 115, 232, 0.9);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 2;
+}
+
+.preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.upload-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.upload-button-secondary {
+  padding: 8px 16px;
+  background-color: #f1f3f4;
+  color: #855025;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.upload-button-primary {
+  padding: 8px 16px;
+  background-color: #855025;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.upload-button-secondary:hover,
+.upload-button-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header-nav {
+  display: flex;
+  gap: 32px;
+  margin-left: 48px;
+}
+
+.header-nav a {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 15px;
+  opacity: 0.8;
+  transition: all 0.2s ease;
+}
+
+.header-nav a:hover {
+  opacity: 1;
+  color: var(--primary-color);
+}
+
