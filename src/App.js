@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import "./App.css";
-import { getImage } from './db'; // 按路径调整
+import { getImage } from './db';
 import ScoreSidebar from './ScoreSidebar';
+
 function CircularProgress({ pauseDuration, remainingTime }) {
-  const circumference = 100; // 圆形进度条的周长为 100
+  const circumference = 100;
   const progress = ((pauseDuration - remainingTime) / pauseDuration) * 100;
   const remainingSeconds = remainingTime / 1000;
 
@@ -38,13 +39,18 @@ function CircularProgress({ pauseDuration, remainingTime }) {
 
 const App = () => {
   const [isScrolling, setIsScrolling] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [justFinishedDragging, setJustFinishedDragging] = useState(false);
+  const lastDragTimeRef = useRef(0); // Track last drag end time
   const [sheetWidth, setSheetWidth] = useState(70);
-  // const [bpm, setBpm] = useState(60);
-  const [pauseDuration, setPauseDuration] = useState(2000);    // 控制停顿时间
-  const [markersPerPage, setMarkersPerPage] = useState(2);     // 默认每页2个标记
-  const [totalPages, setTotalPages] = useState(2);             // 修改为动态页数
+  const [pauseDuration, setPauseDuration] = useState(2000);
+  const [markersPerPage, setMarkersPerPage] = useState(2);
+  const [totalPages, setTotalPages] = useState(2);
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [practiceMarkers, setPracticeMarkers] = useState([]);
+  const scrollTopRef = useRef(null);
+  const isScrollingRef = useRef(isScrolling); // Track isScrolling changes
 
-  // 鍒濆鍖栨爣璁颁綅缃�
   const initializeMarkers = useCallback((numMarkers, pages) => {
     const markers = [];
     for (let page = 0; page < pages; page++) {
@@ -60,49 +66,41 @@ const App = () => {
   }, []);
 
   const [markers, setMarkers] = useState(() => initializeMarkers(markersPerPage, totalPages));
-
-  const [currentMarkerIndex, setCurrentMarkerIndex] = useState(0); // 当前标记的索引
-
+  const [currentMarkerIndex, setCurrentMarkerIndex] = useState(0);
   const scrollAreaRef = useRef(null);
-
-  const FIXED_SCROLL_DURATION = 1; // 2缁夛拷
+  const FIXED_SCROLL_DURATION = 1;
   const [remainingTime, setRemainingTime] = useState(pauseDuration);
   const [showProgress, setShowProgress] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const fileInputRef = useRef(null);
+  const [sheetImages, setSheetImages] = useState(['/sheet1.jpg', '/sheet2.jpg']);
+  const [isUpdatingSheets, setIsUpdatingSheets] = useState(false);
 
   const smoothScrollTo = useCallback((element, target, duration, onComplete) => {
-    const start = element.scrollTop;  // 当前位置
-    const distance = target - start;  // 需要滚动的距离
-    const startTime = performance.now();  // 开始时间
-
-    // 缓动函数
+    const start = element.scrollTop;
+    const distance = target - start;
+    const startTime = performance.now();
     const easing = (t) => {
       if (t < 0.5) {
-        // 前半段
         return 16 * Math.pow(t, 5);
       } else {
-        // 后半段
         return 1 - Math.pow(-2 * t + 2, 5) / 2;
       }
     };
-
     const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;  // 已经过去的时间
-      const progress = Math.min(elapsed / duration, 1);  // 进度 [0, 1]
-
-      // 使用缓动函数计算位置
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
       const easedProgress = easing(progress);
-
-      // 更新滚动位置
       element.scrollTop = start + distance * easedProgress;
-
       if (progress < 1) {
-        requestAnimationFrame(animate);  // 继续动画
+        requestAnimationFrame(animate);
       } else if (onComplete) {
-        onComplete();  // 动画完成后的回调
+        onComplete();
       }
     };
-
-    requestAnimationFrame(animate);  // 开始动画
+    requestAnimationFrame(animate);
   }, []);
 
   const handleSelectScore = async (score) => {
@@ -110,11 +108,10 @@ const App = () => {
       alert("谱子数据为空");
       return;
     }
-  
-    // 清理旧的 URL 对象
     sheetImages.forEach(url => URL.revokeObjectURL(url));
     setSheetImages([]);
-  
+    setPracticeMarkers([]);
+    setIsPracticeMode(false);
     let images = [];
     try {
       if (score.imageKeys && Array.isArray(score.imageKeys) && score.imageKeys.length > 0) {
@@ -128,9 +125,8 @@ const App = () => {
         images = blobs
           .filter(blob => blob instanceof Blob)
           .map(blob => URL.createObjectURL(blob));
-  
         if (images.length === 0) {
-          alert("无法从本地加载谱子图片，可能已被浏览器清除。");
+          alert("无法从本地加载谱子图片，可能已被浏览器清除？");
           return;
         }
       } else if (score.images && Array.isArray(score.images) && score.images.length > 0) {
@@ -139,22 +135,21 @@ const App = () => {
         alert("该谱子不包含图像数据");
         return;
       }
-  
       setSheetImages(images);
-      setMarkers(score.markers || []);
+      setMarkers(score.markers || initializeMarkers(markersPerPage, images.length));
       setTotalPages(images.length);
       setCurrentMarkerIndex(0);
       setIsScrolling(false);
       setShowProgress(false);
     } catch (error) {
-      console.error("加载谱子失败：", error);
-      alert("加载谱子失败，请检查数据或浏览器存储");
+      console.error("加载谱子失败？", error);
+      alert("加载谱子失败，请检查数据或浏览器缓存？");
     }
   };
 
-
   const countdownIntervalRef = useRef(null);
   const timeoutRef = useRef(null);
+
   const isAtMarkerPosition = (scrollArea, marker, totalPages, containerHeight) => {
     if (!scrollArea || !marker) return false;
     const pageHeight = scrollArea.scrollHeight / totalPages;
@@ -165,9 +160,14 @@ const App = () => {
     const currentScroll = scrollArea.scrollTop;
     return Math.abs(currentScroll - targetScroll) < 10;
   };
+
   const scrollToNextMarker = useCallback(() => {
     const scrollArea = scrollAreaRef.current;
-    if (!scrollArea || !isScrolling) return;
+    if (!scrollArea || !isScrollingRef.current) {
+      setShowProgress(false);
+      console.log('scrollToNextMarker: No scrollArea or not scrolling, hiding timer');
+      return;
+    }
 
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
@@ -178,10 +178,13 @@ const App = () => {
       timeoutRef.current = null;
     }
 
-    const marker = markers[currentMarkerIndex];
+    const activeMarkers = isPracticeMode ? practiceMarkers : markers;
+    const marker = activeMarkers[currentMarkerIndex];
     if (!marker) {
       setIsScrolling(false);
+      isScrollingRef.current = false;
       setShowProgress(false);
+      console.log('scrollToNextMarker: No marker, stopping scroll');
       return;
     }
 
@@ -191,6 +194,7 @@ const App = () => {
     if (isAtMarkerPosition(scrollArea, marker, totalPages, containerHeight)) {
       setShowProgress(true);
       setRemainingTime(pauseDuration);
+      console.log('scrollToNextMarker: At marker, showing timer');
 
       countdownIntervalRef.current = setInterval(() => {
         setRemainingTime((prev) => {
@@ -204,25 +208,40 @@ const App = () => {
       }, 100);
 
       timeoutRef.current = setTimeout(() => {
-        if (currentMarkerIndex + 1 >= markers.length) {
+        if (isPracticeMode) {
+          setCurrentMarkerIndex((prev) => (prev + 1) % activeMarkers.length);
+        } else if (currentMarkerIndex + 1 >= activeMarkers.length) {
           setIsScrolling(false);
-          setCurrentMarkerIndex(-1);
+          isScrollingRef.current = false;
           setShowProgress(false);
+          console.log('scrollToNextMarker: End of markers, stopping');
           return;
+        } else {
+          setCurrentMarkerIndex((prev) => prev + 1);
         }
-        setCurrentMarkerIndex((prev) => prev + 1);
       }, pauseDuration);
     } else {
+      if (isDragging) {
+        setShowProgress(true);
+        console.log('scrollToNextMarker: Dragging, showing timer');
+        return;
+      }
+
       const targetScroll =
         pageHeight * (marker.page - 1) +
         pageHeight * marker.position -
         containerHeight / 2;
 
       smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION, () => {
-        if (!isScrolling) return;
+        if (!isScrollingRef.current) {
+          setShowProgress(false);
+          console.log('scrollToNextMarker: Scroll stopped, hiding timer');
+          return;
+        }
 
         setShowProgress(true);
         setRemainingTime(pauseDuration);
+        console.log('scrollToNextMarker: Scroll complete, showing timer');
 
         countdownIntervalRef.current = setInterval(() => {
           setRemainingTime((prev) => {
@@ -236,19 +255,27 @@ const App = () => {
         }, 100);
 
         timeoutRef.current = setTimeout(() => {
-          if (currentMarkerIndex + 1 >= markers.length) {
+          if (isPracticeMode) {
+            setCurrentMarkerIndex((prev) => (prev + 1) % activeMarkers.length);
+          } else if (currentMarkerIndex + 1 >= activeMarkers.length) {
             setIsScrolling(false);
-            setCurrentMarkerIndex(-1);
+            isScrollingRef.current = false;
             setShowProgress(false);
+            console.log('scrollToNextMarker: End of markers, stopping');
             return;
+          } else {
+            setCurrentMarkerIndex((prev) => prev + 1);
           }
-          setCurrentMarkerIndex((prev) => prev + 1);
         }, pauseDuration);
       });
     }
-  }, [isScrolling, currentMarkerIndex, markers, pauseDuration, smoothScrollTo, totalPages]);
+  }, [isDragging, currentMarkerIndex, markers, practiceMarkers, isPracticeMode, pauseDuration, smoothScrollTo, totalPages]);
 
-  // 娣囶喗鏁� useEffect 濞撳懐鎮婇崙鑺ユ殶
+  useEffect(() => {
+    isScrollingRef.current = isScrolling; // Sync ref with state
+    console.log('isScrollingRef updated:', isScrolling);
+  }, [isScrolling]);
+
   useEffect(() => {
     return () => {
       if (countdownIntervalRef.current) {
@@ -261,11 +288,31 @@ const App = () => {
       }
     };
   }, []);
-  useEffect(() => {
-    const scrollArea = scrollAreaRef.current;
-    if (!scrollArea || markers.length === 0) return;
 
-    const marker = markers[0];
+  useEffect(() => {
+    const now = Date.now();
+    const scrollArea = scrollAreaRef.current;
+    const activeMarkers = isPracticeMode ? practiceMarkers : markers;
+    console.log('useEffect: Checking scroll', {
+      scrollArea: !!scrollArea,
+      activeMarkers: activeMarkers.length,
+      isDragging,
+      justFinishedDragging,
+      timeSinceDrag: now - lastDragTimeRef.current
+    });
+
+    if (!scrollArea || activeMarkers.length === 0 || isDragging || justFinishedDragging || (now - lastDragTimeRef.current < 100)) {
+      if (justFinishedDragging) {
+        setJustFinishedDragging(false);
+        console.log('useEffect: Skipped due to justFinishedDragging');
+      }
+      if (now - lastDragTimeRef.current < 100) {
+        console.log('useEffect: Skipped due to recent drag');
+      }
+      return;
+    }
+
+    const marker = activeMarkers[0];
     const containerHeight = window.innerHeight;
     const pageHeight = scrollArea.scrollHeight / totalPages;
     const targetScroll =
@@ -273,46 +320,65 @@ const App = () => {
       pageHeight * marker.position -
       containerHeight / 2;
 
+    console.log('useEffect: Scrolling to first marker');
     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION);
-  }, [markers, smoothScrollTo, totalPages]);
+  }, [markers, practiceMarkers, isPracticeMode, isDragging, justFinishedDragging, smoothScrollTo, totalPages]);
 
-  // 閸︼拷 useEffect 娑擃厼顦╅悶鍡氱箻鎼达附娼惃鍕閽橈拷
   useLayoutEffect(() => {
     if (isScrolling) {
-      if (currentMarkerIndex < 0 || currentMarkerIndex >= markers.length) {
+      const activeMarkers = isPracticeMode ? practiceMarkers : markers;
+      console.log('useLayoutEffect: Checking markers', {
+        currentMarkerIndex,
+        activeMarkersLength: activeMarkers.length
+      });
+      if (activeMarkers.length === 0) {
         setIsScrolling(false);
-        setCurrentMarkerIndex(-1);
+        isScrollingRef.current = false;
         setShowProgress(false);
+        console.log('useLayoutEffect: No markers, stopping scroll and hiding timer');
         return;
       }
+      if (currentMarkerIndex < 0 || currentMarkerIndex >= activeMarkers.length) {
+        setCurrentMarkerIndex(0); // Reset to valid index
+        console.log('useLayoutEffect: Invalid marker index, resetting to 0');
+      }
+      setShowProgress(true);
+      console.log('useLayoutEffect: Setting showProgress to true');
       const scrollArea = scrollAreaRef.current;
-      if (!scrollArea) return;
+      if (!scrollArea) {
+        console.log('useLayoutEffect: No scrollArea, skipping');
+        return;
+      }
       requestAnimationFrame(() => {
         scrollToNextMarker();
       });
+    } else {
+      setShowProgress(false);
+      console.log('useLayoutEffect: isScrolling false, hiding timer');
     }
-  }, [isScrolling, currentMarkerIndex, scrollToNextMarker, markers.length]);
+  }, [isScrolling, currentMarkerIndex, scrollToNextMarker, markers, practiceMarkers, isPracticeMode]);
 
-  // 婢跺嫮鎮婇弽鍥唶閹锋牗瀚�
   const handleMarkerDrag = useCallback((markerId, newPosition) => {
-    setMarkers(prevMarkers =>
+    const updateMarkers = (prevMarkers) =>
       prevMarkers.map(marker =>
         marker.id === markerId
           ? { ...marker, position: Math.max(0, Math.min(1, newPosition)) }
           : marker
-      )
-    );
-  }, []);
+      );
+    if (isPracticeMode) {
+      setPracticeMarkers(prev => updateMarkers(prev));
+    } else {
+      setMarkers(prev => updateMarkers(prev));
+    }
+  }, [isPracticeMode]);
 
-  // 婢跺嫮鎮婇崑婊堛€戦弮鍫曟？閸欐ê瀵�
   const handlePauseDurationChange = (e) => {
     const value = parseInt(e.target.value);
-    if (!isNaN(value) && value >= 500) { // 鐠佸墽鐤嗛張鈧亸蹇撲粻妞ゆ寧妞傞梻缈犺礋500ms
+    if (!isNaN(value) && value >= 500) {
       setPauseDuration(value);
     }
   };
 
-  // 婢跺嫮鎮婇弽鍥唶閺佷即鍣洪崣妯哄
   const handleMarkersPerPageChange = (e) => {
     const value = parseInt(e.target.value);
     if (!isNaN(value) && value > 0) {
@@ -322,8 +388,8 @@ const App = () => {
     }
   };
 
-  // 濞ｈ濮為幍瀣З閸掑洦宕查崚鐗堝瘹鐎规碍鐖ｇ拋鎵畱閸戣姤鏆�
   const scrollToMarker = useCallback((direction) => {
+    if (isDragging) return;
     const scrollArea = scrollAreaRef.current;
     if (!scrollArea) return;
 
@@ -336,7 +402,8 @@ const App = () => {
       timeoutRef.current = null;
     }
 
-    const totalMarkers = markers.length;
+    const activeMarkers = isPracticeMode ? practiceMarkers : markers;
+    const totalMarkers = activeMarkers.length;
     let nextIndex;
 
     if (direction === 'up') {
@@ -345,7 +412,7 @@ const App = () => {
       nextIndex = currentMarkerIndex < totalMarkers - 1 ? currentMarkerIndex + 1 : 0;
     }
 
-    const marker = markers[nextIndex];
+    const marker = activeMarkers[nextIndex];
     if (!marker) return;
 
     const containerHeight = window.innerHeight;
@@ -358,56 +425,76 @@ const App = () => {
     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION, () => {
       setCurrentMarkerIndex(nextIndex);
       setIsScrolling(false);
+      isScrollingRef.current = false;
     });
-  }, [currentMarkerIndex, markers, smoothScrollTo, totalPages]);
+  }, [currentMarkerIndex, markers, practiceMarkers, isPracticeMode, isDragging, smoothScrollTo, totalPages]);
 
   const getCurrentMarkerText = () => {
+    const activeMarkers = isPracticeMode ? practiceMarkers : markers;
     if (currentMarkerIndex < 0) {
       return "未开始";
-    } else if (currentMarkerIndex >= markers.length) {
+    } else if (currentMarkerIndex >= activeMarkers.length) {
       return "已结束";
     } else {
-      const marker = markers[currentMarkerIndex];
+      const marker = activeMarkers[currentMarkerIndex];
       return `第${marker.page}页 ${(marker.position * 100).toFixed(0)}%`;
     }
   };
 
-  // 濞ｈ濮為弽鍥唶
-  const addMarker = (page, currentPosition, currentId) => {
-    setMarkers((prevMarkers) => {
-      // 娴ｈ法鏁よぐ鎾冲閺嶅洩顔囬惃鍕秴缂冾喕缍旀稉鍝勫棘閼板喛绱濋弬鐗堢垼鐠侀绱
-      const newPosition = Math.min(Math.max(currentPosition + 0.1, 0), 1);
-
-      const newMarker = {
-        id: currentId + 1, // 閸︺劌缍嬮崜宥嗙垼鐠佹壆娈慽d閸╄櫣顢呮稉濠傚1
-        position: newPosition,
-        page: page,
-      };
-
-      // 閺囧瓨鏌婅ぐ鎾冲妞ら潧鎮楃紒顓熺垼鐠佹澘鎷伴崥搴ｇ敾妞ょ敻娼伴弽鍥唶閻ㄥ埇d
-      const updatedMarkers = prevMarkers.map(marker => {
-        if (marker.id > currentId) {
-          // 閹碘偓閺堝"d婢堆傜艾瑜版挸澧犻弽鍥唶id閻ㄥ嫭鐖ｇ拋浼村厴闂団偓鐟曚巩d+1
-          return { ...marker, id: marker.id + 1 };
-        }
-        return marker;
+  const addMarker = (page, position, currentId) => {
+    if (isPracticeMode) {
+      setPracticeMarkers((prev) => {
+        const newId = prev.length + 1;
+        const newMarker = { id: newId, position: Math.max(0, Math.min(1, position)), page };
+        return [...prev, newMarker];
       });
+    } else {
+      setMarkers((prevMarkers) => {
+        const newPosition = Math.min(Math.max(position + 0.1, 0), 1);
+        const newMarker = { id: currentId + 1, position: newPosition, page };
+        const updatedMarkers = prevMarkers.map(marker => {
+          if (marker.id > currentId) {
+            return { ...marker, id: marker.id + 1 };
+          }
+          return marker;
+        });
+        return [...updatedMarkers, newMarker].sort((a, b) => a.id - b.id);
+      });
+    }
+  };
 
-      // 鐏忓棙鏌婇弽鍥唶閹绘帒鍙嗛崚鐗堫劀绾喚娈戞担宥囩枂
-      return [...updatedMarkers, newMarker].sort((a, b) => a.id - b.id);
+  const deleteMarker = (markerId) => {
+    if (isPracticeMode) {
+      setPracticeMarkers((prev) => prev.filter(marker => marker.id !== markerId));
+    } else {
+      setMarkers((prevMarkers) => prevMarkers.filter(marker => marker.id !== markerId));
+    }
+  };
+
+  const togglePracticeMode = () => {
+    setIsPracticeMode((prev) => {
+      const newMode = !prev;
+      if (newMode) {
+        setPracticeMarkers([]);
+        setCurrentMarkerIndex(0);
+        setIsScrolling(false);
+        isScrollingRef.current = false;
+        setShowProgress(false);
+      }
+      return newMode;
     });
   };
 
-  // 閸掔娀娅庨弽鍥唶
-  const deleteMarker = (markerId) => {
-    setMarkers((prevMarkers) => prevMarkers.filter(marker => marker.id !== markerId));
+  const handleSheetClick = (e, pageNum) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const clickY = e.clientY - rect.top;
+    const containerHeight = container.offsetHeight;
+    const position = clickY / containerHeight;
+    addMarker(pageNum + 1, position, isPracticeMode ? practiceMarkers.length : markers.reduce((max, m) => Math.max(max, m.id), 0));
   };
-
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  const [showUpload, setShowUpload] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const fileInputRef = useRef(null);
 
   const handleFileUpload = (event) => {
     const files = Array.from(event.target.files);
@@ -434,7 +521,6 @@ const App = () => {
     });
   };
 
-  // 婢跺嫮鎮婇幏鏍ㄥ閹烘帒绨�
   const handleDragStart = (e, index) => {
     e.dataTransfer.setData('text/plain', index);
   };
@@ -446,13 +532,10 @@ const App = () => {
   const handleDrop = (e, dropIndex) => {
     e.preventDefault();
     const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
-
     setUploadedFiles(prev => {
       const newFiles = [...prev];
       const [draggedItem] = newFiles.splice(dragIndex, 1);
       newFiles.splice(dropIndex, 0, draggedItem);
-
-      // 閺囧瓨鏌婃い鍝勭碍
       return newFiles.map((file, index) => ({
         ...file,
         order: index + 1
@@ -460,16 +543,13 @@ const App = () => {
     });
   };
 
-  // 绾喛顓绘稉濠佺炊
   const handleConfirmUpload = () => {
     if (uploadedFiles.length === 0) return;
-
     setIsUpdatingSheets(true);
-
     setIsScrolling(false);
+    isScrollingRef.current = false;
     setCurrentMarkerIndex(0);
     setShowProgress(false);
-
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
@@ -478,34 +558,48 @@ const App = () => {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-
     requestAnimationFrame(() => {
       const newSheets = uploadedFiles.map(file => file.url);
       setSheetImages(newSheets);
       setTotalPages(newSheets.length);
       setMarkers(initializeMarkers(markersPerPage, newSheets.length));
+      setPracticeMarkers([]);
+      setIsPracticeMode(false);
       setShowUpload(false);
       setIsUpdatingSheets(false);
     });
   };
 
-  // 濞ｈ濮為弬鎵畱閻樿埖鈧焦娼电€涙ê鍋嶇拫鍗炵摍閸ュ墽澧�
-  const [sheetImages, setSheetImages] = useState(['/sheet1.jpg', '/sheet2.jpg']); // 姒涙ǹ顓荤拫鍗炵摍
-  const [isUpdatingSheets, setIsUpdatingSheets] = useState(false);
+  useEffect(() => {
+    const preventTouchScroll = (e) => {
+      if (e.target.closest('.sheet-marker')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener('touchmove', preventTouchScroll, { passive: false });
+    return () => {
+      document.removeEventListener('touchmove', preventTouchScroll);
+    };
+  }, []);
 
   return (
     <>
       <header className="header">
-        <div className="header-title">
-          PageTurner
-        </div>
+        <div className="header-title">PageTurner</div>
         <div className="header-actions">
+          <button
+            className={`upload-button practice-mode-btn${isPracticeMode ? ' active' : ''}`}
+            onClick={togglePracticeMode}
+          >
+            <span className="icon">{isPracticeMode ? '✅' : '🎵'}</span>
+            {isPracticeMode ? '退出练习' : '练习模式'}
+          </button>
           <button
             className="upload-button"
             onClick={() => setShowUpload(true)}
           >
-            <span className="icon">📤</span>
-            上传谱子
+            <span className="icon">📤</span> 上传谱子
           </button>
           <button
             className="settings-toggle"
@@ -513,70 +607,17 @@ const App = () => {
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
-              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l-.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l-.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v-.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l-.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
             </svg>
           </button>
         </div>
       </header>
       <div className="container">
         <ScoreSidebar
-          onSelectScore={async (score) => {
-            console.log("被选中的谱子对象：", score);
-
-            if (!score) {
-              alert("谱子数据为空");
-              return;
-            }
-
-            let images = [];
-
-            // ✅ 读取图像：从 IndexedDB 或 fallback 到旧格式
-            if (score.imageKeys && Array.isArray(score.imageKeys)) {
-              try {
-                const blobs = await Promise.all(score.imageKeys.map(key => getImage(key)));
-
-                // 检查 blob 有效性
-                const validBlobs = blobs.filter(blob => blob instanceof Blob);
-
-                // ✅ 调试输出：检测哪些 key 加载失败
-                score.imageKeys.forEach((key, i) => {
-                  if (!blobs[i]) {
-                    console.warn(`未找到图片：${key}`);
-                  }
-                });
-
-                if (validBlobs.length === 0) {
-                  alert("无法从本地加载谱子图片，可能已被浏览器清除。");
-                  return;
-                }
-
-                images = validBlobs.map(blob => URL.createObjectURL(blob));
-              } catch (e) {
-                console.error("从 IndexedDB 加载图像失败：", e);
-                alert("谱子图像加载失败！");
-                return;
-              }
-            } else if (score.images && Array.isArray(score.images)) {
-              // fallback：支持老谱子（base64 图像）
-              images = score.images;
-            } else {
-              alert("该谱子不包含图像数据");
-              return;
-            }
-
-            // ✅ 正常设置状态
-            setSheetImages(images);
-            setMarkers(score.markers || []);
-            setTotalPages(images.length);
-            setCurrentMarkerIndex(0);
-            setIsScrolling(false);
-            setShowProgress(false);
-            setShowUpload(false);
-          }}
+          onSelectScore={handleSelectScore}
           currentSheetImages={sheetImages}
-          currentMarkers={markers}
+          currentMarkers={isPracticeMode ? practiceMarkers : markers}
         />
-
         <div className={`settings ${settingsOpen ? 'open' : ''}`}>
           <label>
             每页标记数量:
@@ -585,6 +626,7 @@ const App = () => {
               value={markersPerPage}
               onChange={handleMarkersPerPageChange}
               min="1"
+              disabled={isPracticeMode}
             />
           </label>
           <label>
@@ -616,10 +658,14 @@ const App = () => {
             <h4>Debug Variables:</h4>
             <div>currentMarkerIndex: {currentMarkerIndex}</div>
             <div>isScrolling: {isScrolling.toString()}</div>
-            <div>markers.length: {markers.length}</div>
+            <div>isDragging: {isDragging.toString()}</div>
+            <div>justFinishedDragging: {justFinishedDragging.toString()}</div>
+            <div>showProgress: {showProgress.toString()}</div>
+            <div>markers.length: {(isPracticeMode ? practiceMarkers : markers).length}</div>
+            <div>isPracticeMode: {isPracticeMode.toString()}</div>
             <div>markers:</div>
             <div style={{ fontSize: '12px', marginLeft: '10px' }}>
-              {markers.map((marker, index) => (
+              {(isPracticeMode ? practiceMarkers : markers).map((marker, index) => (
                 <div key={marker.id}>
                   id: {marker.id}, page: {marker.page}, position: {marker.position}
                   {index === currentMarkerIndex ? ' (current)' : ''}
@@ -643,27 +689,53 @@ const App = () => {
                   src={imageUrl}
                   alt={`乐谱 ${pageNum + 1}`}
                   className="sheet"
-                  loading="lazy"
                 />
-                {markers
+                <div
+                  className="clickable-edge"
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 0,
+                    width: '30px',
+                    height: '100%',
+                    cursor: 'pointer',
+                    background: 'rgba(0,0,0,0.1)',
+                    opacity: 0,
+                    transition: 'opacity 0.2s'
+                  }}
+                  onMouseEnter={(e) => isPracticeMode && (e.currentTarget.style.opacity = '0.3')}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
+                  onClick={(e) => isPracticeMode && handleSheetClick(e, pageNum)}
+                />
+                {(isPracticeMode ? practiceMarkers : markers)
                   .filter(marker => marker.page === pageNum + 1)
                   .map((marker) => (
                     <div
                       key={`marker-${marker.id}-${pageNum}`}
-                      className="sheet-marker"
+                      className={`sheet-marker ${isPracticeMode ? 'practice-marker' : ''}`}
                       style={{
                         position: 'absolute',
                         right: 0,
                         top: `${marker.position * 100}%`,
                         transform: 'translateY(-50%)',
-                        cursor: 'ns-resize'
+                        cursor: 'ns-resize',
+                        touchAction: 'none'
                       }}
                       onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsDragging(true);
+                        scrollTopRef.current = scrollAreaRef.current.scrollTop;
                         const container = e.currentTarget.parentElement;
                         const startY = e.clientY;
                         const startPos = marker.position;
 
                         const handleMouseMove = (moveEvent) => {
+                          moveEvent.preventDefault();
+                          moveEvent.stopPropagation();
+                          if (scrollAreaRef.current && scrollTopRef.current !== null) {
+                            scrollAreaRef.current.scrollTop = scrollTopRef.current;
+                          }
                           const deltaY = moveEvent.clientY - startY;
                           const containerHeight = container.offsetHeight;
                           const newPosition = startPos + (deltaY / containerHeight);
@@ -671,6 +743,10 @@ const App = () => {
                         };
 
                         const handleMouseUp = () => {
+                          setIsDragging(false);
+                          setJustFinishedDragging(true);
+                          lastDragTimeRef.current = Date.now();
+                          console.log('Mouse up: Drag ended, set lastDragTime');
                           document.removeEventListener('mousemove', handleMouseMove);
                           document.removeEventListener('mouseup', handleMouseUp);
                         };
@@ -678,12 +754,56 @@ const App = () => {
                         document.addEventListener('mousemove', handleMouseMove);
                         document.addEventListener('mouseup', handleMouseUp);
                       }}
-                    >
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsDragging(true);
+                        scrollTopRef.current = scrollAreaRef.current.scrollTop;
+                        const touch = e.touches[0];
+                        const container = e.currentTarget.parentElement;
+                        const startY = touch.clientY;
+                        const startPos = marker.position;
 
-                      <div className="marker-buttons">
-                        <div className="marker-button" onClick={() => addMarker(pageNum + 1, marker.position, marker.id)}>+</div>
-                        <div className="marker-button" onClick={() => deleteMarker(marker.id)}>-</div>
-                      </div>
+                        const handleTouchMove = (moveEvent) => {
+                          moveEvent.preventDefault();
+                          moveEvent.stopPropagation();
+                          if (scrollAreaRef.current && scrollTopRef.current !== null) {
+                            scrollAreaRef.current.scrollTop = scrollTopRef.current;
+                          }
+                          const touchMove = moveEvent.touches[0];
+                          const deltaY = touchMove.clientY - startY;
+                          const containerHeight = container.offsetHeight;
+                          const newPosition = startPos + (deltaY / containerHeight);
+                          handleMarkerDrag(marker.id, newPosition);
+                        };
+
+                        const handleTouchEnd = () => {
+                          setIsDragging(false);
+                          setJustFinishedDragging(true);
+                          lastDragTimeRef.current = Date.now();
+                          console.log('Touch end: Drag ended, set lastDragTime');
+                          document.removeEventListener('touchmove', handleTouchMove);
+                          document.removeEventListener('touchend', handleTouchEnd);
+                        };
+
+                        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+                        document.addEventListener('touchend', handleTouchEnd);
+                      }}
+                    >
+                      {isPracticeMode ? (
+                        <>
+                          <span>{marker.id}</span>
+                          <div className="marker-buttons">
+                            <div className="marker-button" onClick={() => addMarker(pageNum + 1, marker.position, marker.id)}>+</div>
+                            <div className="marker-button" onClick={() => deleteMarker(marker.id)}>-</div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="marker-buttons">
+                          <div className="marker-button" onClick={() => addMarker(pageNum + 1, marker.position, marker.id)}>+</div>
+                          <div className="marker-button" onClick={() => deleteMarker(marker.id)}>-</div>
+                        </div>
+                      )}
                     </div>
                   ))}
               </div>
@@ -696,15 +816,21 @@ const App = () => {
             className="controlButton"
             onClick={() => {
               if (!isScrolling) {
+                const activeMarkers = isPracticeMode ? practiceMarkers : markers;
+                if (activeMarkers.length === 0) {
+                  console.log('Control Start: No markers available, aborting');
+                  return;
+                }
                 setIsScrolling(true);
+                isScrollingRef.current = true;
                 setRemainingTime(pauseDuration);
                 setShowProgress(true);
-                // Reset to first marker if at end or invalid index
-                if (currentMarkerIndex === -1 || currentMarkerIndex >= markers.length) {
+                console.log('Control Start: showProgress set to true');
+                if (currentMarkerIndex === -1 || currentMarkerIndex >= activeMarkers.length) {
                   setCurrentMarkerIndex(0);
                   const scrollArea = scrollAreaRef.current;
-                  if (scrollArea && markers.length > 0) {
-                    const marker = markers[0];
+                  if (scrollArea && activeMarkers.length > 0) {
+                    const marker = activeMarkers[0];
                     const containerHeight = window.innerHeight;
                     const pageHeight = scrollArea.scrollHeight / totalPages;
                     const targetScroll =
@@ -716,9 +842,11 @@ const App = () => {
                 }
               } else {
                 setIsScrolling(false);
+                isScrollingRef.current = false;
                 clearInterval(countdownIntervalRef.current);
                 clearTimeout(timeoutRef.current);
                 setShowProgress(false);
+                console.log('Control Stop: showProgress set to false');
               }
             }}
           >
@@ -726,14 +854,14 @@ const App = () => {
           </button>
           <button className="downButton" onClick={() => scrollToMarker('down')}></button>
         </div>
-
         {showProgress && (
-          <CircularProgress
-            pauseDuration={pauseDuration}
-            remainingTime={remainingTime}
-          />
+          <div className="progress-container">
+            <CircularProgress
+              pauseDuration={pauseDuration}
+              remainingTime={remainingTime}
+            />
+          </div>
         )}
-
         <div className={`upload-area ${showUpload ? 'show' : ''}`}>
           <h3>上传乐谱</h3>
           <div
@@ -787,7 +915,6 @@ const App = () => {
             </button>
           </div>
         </div>
-
       </div>
     </>
   );
