@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
+import Metronome from './Metronome';
 import "./App.css";
 import { getImage } from './db';
+import * as Tone from 'tone'; // Import Tone.js via CDN or manual setup
 import ScoreSidebar from './ScoreSidebar';
+import './ScoreSidebar.css';
 
 function CircularProgress({ pauseDuration, remainingTime }) {
   const circumference = 100;
@@ -38,18 +41,24 @@ function CircularProgress({ pauseDuration, remainingTime }) {
 }
 
 const App = () => {
+  const [scrollTopOffset, setScrollTopOffset] = useState(0.15); // Tweak this value: 0.1 for top, 0.9 for bottom
   const [isScrolling, setIsScrolling] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [justFinishedDragging, setJustFinishedDragging] = useState(false);
   const lastDragTimeRef = useRef(0); // Track last drag end time
   const [sheetWidth, setSheetWidth] = useState(70);
-  const [pauseDuration, setPauseDuration] = useState(2000);
+  const [pauseDuration, setPauseDuration] = useState(2); // Changed to seconds
+  const [isMeasuresAutoEnabled, setIsMeasuresAutoEnabled] = useState(true); // Toggle for measures auto-calc
   const [markersPerPage, setMarkersPerPage] = useState(2);
   const [totalPages, setTotalPages] = useState(2);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [practiceMarkers, setPracticeMarkers] = useState([]);
   const scrollTopRef = useRef(null);
   const isScrollingRef = useRef(isScrolling); // Track isScrolling changes
+  const [bpm, setBpm] = useState(90); // Default bpm synced with Metronome
+  const [isMetronomePlaying, setIsMetronomePlaying] = useState(false); // Metronome toggle
+  const [measuresBetweenMarkers, setMeasuresBetweenMarkers] = useState(''); // Number of measures between markers
+  const [showTimerWhileScrolling, setShowTimerWhileScrolling] = useState(true);
 
   const initializeMarkers = useCallback((numMarkers, pages) => {
     const markers = [];
@@ -69,7 +78,7 @@ const App = () => {
   const [currentMarkerIndex, setCurrentMarkerIndex] = useState(0);
   const scrollAreaRef = useRef(null);
   const FIXED_SCROLL_DURATION = 1;
-  const [remainingTime, setRemainingTime] = useState(pauseDuration);
+  const [remainingTime, setRemainingTime] = useState(pauseDuration * 1000); // Convert to ms for timer
   const [showProgress, setShowProgress] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
@@ -78,34 +87,71 @@ const App = () => {
   const [sheetImages, setSheetImages] = useState(['/sheet1.jpg', '/sheet2.jpg']);
   const [isUpdatingSheets, setIsUpdatingSheets] = useState(false);
 
+  // Metronome setup with Tone.js Synth
+  const synthRef = useRef(null);
+  const loopRef = useRef(null);
+
+  useEffect(() => {
+    if (!synthRef.current) {
+      synthRef.current = new Tone.Synth({
+        oscillator: { type: "sine" },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+      }).toDestination();
+      loopRef.current = new Tone.Loop((time) => {
+        synthRef.current.triggerAttackRelease("C4", "8n", time);
+      }, "0:0");
+    }
+
+    return () => {
+      if (loopRef.current) loopRef.current.dispose();
+      if (synthRef.current) synthRef.current.dispose();
+      Tone.Transport.stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isMetronomePlaying) {
+      const interval = 60000 / bpm;
+      if (loopRef.current) loopRef.current.interval = `${interval / 1000}s`;
+      Tone.Transport.bpm.value = bpm;
+    }
+  }, [bpm, isMetronomePlaying]);
+
+  const toggleMetronome = () => {
+    if (!isMetronomePlaying) {
+      Tone.start().then(() => {
+        if (loopRef.current && !loopRef.current._active) {
+          loopRef.current.start(0);
+          Tone.Transport.start();
+        }
+        setIsMetronomePlaying(true);
+      }).catch(error => console.error("Failed to start Tone.js:", error));
+    } else {
+      Tone.Transport.stop();
+      if (loopRef.current) loopRef.current.stop();
+      setIsMetronomePlaying(false);
+    }
+  };
+
   const smoothScrollTo = useCallback((element, target, duration, onComplete) => {
     const start = element.scrollTop;
     const distance = target - start;
     const startTime = performance.now();
-    const easing = (t) => {
-      if (t < 0.5) {
-        return 16 * Math.pow(t, 5);
-      } else {
-        return 1 - Math.pow(-2 * t + 2, 5) / 2;
-      }
-    };
+    const easing = (t) => (t < 0.5 ? 16 * Math.pow(t, 5) : 1 - Math.pow(-2 * t + 2, 5) / 2);
     const animate = (currentTime) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const easedProgress = easing(progress);
       element.scrollTop = start + distance * easedProgress;
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else if (onComplete) {
-        onComplete();
-      }
+      if (progress < 1) requestAnimationFrame(animate);
+      else if (onComplete) onComplete();
     };
     requestAnimationFrame(animate);
   }, []);
 
   const handleSelectScore = async (score) => {
     if (!score) {
-      alert("谱子数据为空");
+      alert("没有数据");
       return;
     }
     sheetImages.forEach(url => URL.revokeObjectURL(url));
@@ -115,24 +161,20 @@ const App = () => {
     let images = [];
     try {
       if (score.imageKeys && Array.isArray(score.imageKeys) && score.imageKeys.length > 0) {
-        const blobs = await Promise.all(
-          score.imageKeys.map(async (key) => {
-            const blob = await getImage(key);
-            if (!blob) console.warn(`未找到图片：${key}`);
-            return blob;
-          })
-        );
-        images = blobs
-          .filter(blob => blob instanceof Blob)
-          .map(blob => URL.createObjectURL(blob));
+        const blobs = await Promise.all(score.imageKeys.map(async (key) => {
+          const blob = await getImage(key);
+          if (!blob) console.warn(`找不到图片: ${key}`);
+          return blob;
+        }));
+        images = blobs.filter(blob => blob instanceof Blob).map(blob => URL.createObjectURL(blob));
         if (images.length === 0) {
-          alert("无法从本地加载谱子图片，可能已被浏览器清除？");
+          alert("无法从数据库加载图片，可能是被删除?");
           return;
         }
       } else if (score.images && Array.isArray(score.images) && score.images.length > 0) {
         images = score.images;
       } else {
-        alert("该谱子不包含图像数据");
+        alert("乐谱不包含图片数据");
         return;
       }
       setSheetImages(images);
@@ -142,8 +184,8 @@ const App = () => {
       setIsScrolling(false);
       setShowProgress(false);
     } catch (error) {
-      console.error("加载谱子失败？", error);
-      alert("加载谱子失败，请检查数据或浏览器缓存？");
+      console.error("加载乐谱失败:", error);
+      alert("加载乐谱失败，请检查网络或数据库");
     }
   };
 
@@ -153,10 +195,7 @@ const App = () => {
   const isAtMarkerPosition = (scrollArea, marker, totalPages, containerHeight) => {
     if (!scrollArea || !marker) return false;
     const pageHeight = scrollArea.scrollHeight / totalPages;
-    const targetScroll =
-      pageHeight * (marker.page - 1) +
-      pageHeight * marker.position -
-      containerHeight / 2;
+    const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
     const currentScroll = scrollArea.scrollTop;
     return Math.abs(currentScroll - targetScroll) < 10;
   };
@@ -193,18 +232,11 @@ const App = () => {
 
     if (isAtMarkerPosition(scrollArea, marker, totalPages, containerHeight)) {
       setShowProgress(true);
-      setRemainingTime(pauseDuration);
+      setRemainingTime(pauseDuration * 1000);
       console.log('scrollToNextMarker: At marker, showing timer');
 
       countdownIntervalRef.current = setInterval(() => {
-        setRemainingTime((prev) => {
-          if (prev <= 100) {
-            clearInterval(countdownIntervalRef.current);
-            countdownIntervalRef.current = null;
-            return 0;
-          }
-          return prev - 100;
-        });
+        setRemainingTime((prev) => (prev <= 100 ? (clearInterval(countdownIntervalRef.current), countdownIntervalRef.current = null, 0) : prev - 100));
       }, 100);
 
       timeoutRef.current = setTimeout(() => {
@@ -219,7 +251,7 @@ const App = () => {
         } else {
           setCurrentMarkerIndex((prev) => prev + 1);
         }
-      }, pauseDuration);
+      }, pauseDuration * 1000);
     } else {
       if (isDragging) {
         setShowProgress(true);
@@ -227,10 +259,7 @@ const App = () => {
         return;
       }
 
-      const targetScroll =
-        pageHeight * (marker.page - 1) +
-        pageHeight * marker.position -
-        containerHeight / 2;
+      const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
 
       smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION, () => {
         if (!isScrollingRef.current) {
@@ -240,18 +269,11 @@ const App = () => {
         }
 
         setShowProgress(true);
-        setRemainingTime(pauseDuration);
+        setRemainingTime(pauseDuration * 1000);
         console.log('scrollToNextMarker: Scroll complete, showing timer');
 
         countdownIntervalRef.current = setInterval(() => {
-          setRemainingTime((prev) => {
-            if (prev <= 100) {
-              clearInterval(countdownIntervalRef.current);
-              countdownIntervalRef.current = null;
-              return 0;
-            }
-            return prev - 100;
-          });
+          setRemainingTime((prev) => (prev <= 100 ? (clearInterval(countdownIntervalRef.current), countdownIntervalRef.current = null, 0) : prev - 100));
         }, 100);
 
         timeoutRef.current = setTimeout(() => {
@@ -266,13 +288,13 @@ const App = () => {
           } else {
             setCurrentMarkerIndex((prev) => prev + 1);
           }
-        }, pauseDuration);
+        }, pauseDuration * 1000);
       });
     }
   }, [isDragging, currentMarkerIndex, markers, practiceMarkers, isPracticeMode, pauseDuration, smoothScrollTo, totalPages]);
 
   useEffect(() => {
-    isScrollingRef.current = isScrolling; // Sync ref with state
+    isScrollingRef.current = isScrolling;
     console.log('isScrollingRef updated:', isScrolling);
   }, [isScrolling]);
 
@@ -290,6 +312,8 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    if (isPracticeMode) return; // Prevent auto-scroll to first marker when adding markers in practice mode
+
     const now = Date.now();
     const scrollArea = scrollAreaRef.current;
     const activeMarkers = isPracticeMode ? practiceMarkers : markers;
@@ -315,10 +339,7 @@ const App = () => {
     const marker = activeMarkers[0];
     const containerHeight = window.innerHeight;
     const pageHeight = scrollArea.scrollHeight / totalPages;
-    const targetScroll =
-      pageHeight * (marker.page - 1) +
-      pageHeight * marker.position -
-      containerHeight / 2;
+    const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
 
     console.log('useEffect: Scrolling to first marker');
     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION);
@@ -339,7 +360,7 @@ const App = () => {
         return;
       }
       if (currentMarkerIndex < 0 || currentMarkerIndex >= activeMarkers.length) {
-        setCurrentMarkerIndex(0); // Reset to valid index
+        setCurrentMarkerIndex(0);
         console.log('useLayoutEffect: Invalid marker index, resetting to 0');
       }
       setShowProgress(true);
@@ -349,9 +370,7 @@ const App = () => {
         console.log('useLayoutEffect: No scrollArea, skipping');
         return;
       }
-      requestAnimationFrame(() => {
-        scrollToNextMarker();
-      });
+      requestAnimationFrame(() => scrollToNextMarker());
     } else {
       setShowProgress(false);
       console.log('useLayoutEffect: isScrolling false, hiding timer');
@@ -360,22 +379,48 @@ const App = () => {
 
   const handleMarkerDrag = useCallback((markerId, newPosition) => {
     const updateMarkers = (prevMarkers) =>
-      prevMarkers.map(marker =>
-        marker.id === markerId
-          ? { ...marker, position: Math.max(0, Math.min(1, newPosition)) }
-          : marker
-      );
-    if (isPracticeMode) {
-      setPracticeMarkers(prev => updateMarkers(prev));
-    } else {
-      setMarkers(prev => updateMarkers(prev));
-    }
+      prevMarkers.map(marker => (marker.id === markerId ? { ...marker, position: Math.max(0, Math.min(1, newPosition)) } : marker));
+    if (isPracticeMode) setPracticeMarkers(prev => updateMarkers(prev));
+    else setMarkers(prev => updateMarkers(prev));
   }, [isPracticeMode]);
 
   const handlePauseDurationChange = (e) => {
-    const value = parseInt(e.target.value);
-    if (!isNaN(value) && value >= 500) {
-      setPauseDuration(value);
+    const value = e.target.value;
+    if (value === '') setPauseDuration('');
+    else {
+      const numValue = parseFloat(value);
+      if (isNaN(numValue)) return;
+      const roundedValue = Math.round(numValue * 10) / 10; // Round to 1 decimal place
+      const clampedValue = Math.max(0.5, Math.min(30, roundedValue));
+      setPauseDuration(clampedValue);
+    }
+  };
+
+  const handleScrollTopOffsetChange = (e) => {
+    const value = e.target.value;
+    const numValue = parseFloat(value);
+    if (!isNaN(numValue)) {
+      const clamped = Math.max(0.1, Math.min(0.9, numValue));
+      setScrollTopOffset(clamped);
+    }
+  };
+
+  const handleMeasuresBetweenMarkersChange = (e) => {
+    const value = e.target.value;
+    if (value === '') {
+      setMeasuresBetweenMarkers('');
+    } else {
+      const numMeasures = parseInt(value);
+      if (!isNaN(numMeasures) && numMeasures > 0) {
+        setMeasuresBetweenMarkers(numMeasures);
+        if (isMeasuresAutoEnabled && measuresBetweenMarkers !== '') { // Recalculate only if enabled
+          const beatsPerMeasure = 4; // Default to 4/4 for now
+          const totalBeats = numMeasures * beatsPerMeasure;
+          const durationInSeconds = (totalBeats * 60) / bpm; // Use current bpm
+          const roundedDuration = Math.round(durationInSeconds * 10) / 10; // Round to 1 decimal place
+          setPauseDuration(Math.max(0.5, Math.min(30, roundedDuration)));
+        }
+      }
     }
   };
 
@@ -385,6 +430,19 @@ const App = () => {
       setMarkersPerPage(value);
       setMarkers(initializeMarkers(value, totalPages));
       setCurrentMarkerIndex(0);
+    }
+  };
+
+  const handleBpmChange = (newBpm) => {
+    if (!isNaN(newBpm) && newBpm >= 30 && newBpm <= 300) {
+      setBpm(newBpm);
+      if (isMeasuresAutoEnabled && measuresBetweenMarkers !== '') {
+        const beatsPerMeasure = 4; // Default for now
+        const totalBeats = measuresBetweenMarkers * beatsPerMeasure;
+        const durationInSeconds = (totalBeats * 60) / newBpm; // Recalculate with new bpm
+        const roundedDuration = Math.round(durationInSeconds * 10) / 10; // Round to 1 decimal place
+        setPauseDuration(Math.max(0.5, Math.min(30, roundedDuration)));
+      }
     }
   };
 
@@ -404,23 +462,14 @@ const App = () => {
 
     const activeMarkers = isPracticeMode ? practiceMarkers : markers;
     const totalMarkers = activeMarkers.length;
-    let nextIndex;
-
-    if (direction === 'up') {
-      nextIndex = currentMarkerIndex > 0 ? currentMarkerIndex - 1 : totalMarkers - 1;
-    } else {
-      nextIndex = currentMarkerIndex < totalMarkers - 1 ? currentMarkerIndex + 1 : 0;
-    }
+    let nextIndex = direction === 'up' ? (currentMarkerIndex > 0 ? currentMarkerIndex - 1 : totalMarkers - 1) : (currentMarkerIndex < totalMarkers - 1 ? currentMarkerIndex + 1 : 0);
 
     const marker = activeMarkers[nextIndex];
     if (!marker) return;
 
     const containerHeight = window.innerHeight;
     const pageHeight = scrollArea.scrollHeight / totalPages;
-    const targetScroll =
-      pageHeight * (marker.page - 1) +
-      pageHeight * marker.position -
-      containerHeight / 2;
+    const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
 
     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION, () => {
       setCurrentMarkerIndex(nextIndex);
@@ -431,11 +480,9 @@ const App = () => {
 
   const getCurrentMarkerText = () => {
     const activeMarkers = isPracticeMode ? practiceMarkers : markers;
-    if (currentMarkerIndex < 0) {
-      return "未开始";
-    } else if (currentMarkerIndex >= activeMarkers.length) {
-      return "已结束";
-    } else {
+    if (currentMarkerIndex < 0) return "没有标记";
+    else if (currentMarkerIndex >= activeMarkers.length) return "页面结束";
+    else {
       const marker = activeMarkers[currentMarkerIndex];
       return `第${marker.page}页 ${(marker.position * 100).toFixed(0)}%`;
     }
@@ -452,30 +499,22 @@ const App = () => {
       setMarkers((prevMarkers) => {
         const newPosition = Math.min(Math.max(position + 0.1, 0), 1);
         const newMarker = { id: currentId + 1, position: newPosition, page };
-        const updatedMarkers = prevMarkers.map(marker => {
-          if (marker.id > currentId) {
-            return { ...marker, id: marker.id + 1 };
-          }
-          return marker;
-        });
+        const updatedMarkers = prevMarkers.map(marker => (marker.id > currentId ? { ...marker, id: marker.id + 1 } : marker));
         return [...updatedMarkers, newMarker].sort((a, b) => a.id - b.id);
       });
     }
   };
 
   const deleteMarker = (markerId) => {
-    if (isPracticeMode) {
-      setPracticeMarkers((prev) => prev.filter(marker => marker.id !== markerId));
-    } else {
-      setMarkers((prevMarkers) => prevMarkers.filter(marker => marker.id !== markerId));
-    }
+    if (isPracticeMode) setPracticeMarkers((prev) => prev.filter(marker => marker.id !== markerId));
+    else setMarkers((prevMarkers) => prevMarkers.filter(marker => marker.id !== markerId));
   };
 
   const togglePracticeMode = () => {
     setIsPracticeMode((prev) => {
       const newMode = !prev;
       if (newMode) {
-        setPracticeMarkers([]);
+        // setPracticeMarkers([]); // Keep practice markers when re-entering the mode
         setCurrentMarkerIndex(0);
         setIsScrolling(false);
         isScrollingRef.current = false;
@@ -498,36 +537,20 @@ const App = () => {
 
   const handleFileUpload = (event) => {
     const files = Array.from(event.target.files);
-    const imageFiles = files.filter(file =>
-      file.type === "image/jpeg" || file.type === "image/png"
-    );
+    const imageFiles = files.filter(file => file.type === "image/jpeg" || file.type === "image/png");
 
-    const fileReaders = imageFiles.map(file => {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          resolve({
-            name: file.name,
-            url: e.target.result,
-            order: uploadedFiles.length + imageFiles.indexOf(file) + 1
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-    });
+    const fileReaders = imageFiles.map(file => new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve({ name: file.name, url: e.target.result, order: uploadedFiles.length + imageFiles.indexOf(file) + 1 });
+      reader.readAsDataURL(file);
+    }));
 
-    Promise.all(fileReaders).then(results => {
-      setUploadedFiles(prev => [...prev, ...results].sort((a, b) => a.order - b.order));
-    });
+    Promise.all(fileReaders).then(results => setUploadedFiles(prev => [...prev, ...results].sort((a, b) => a.order - b.order)));
   };
 
-  const handleDragStart = (e, index) => {
-    e.dataTransfer.setData('text/plain', index);
-  };
+  const handleDragStart = (e, index) => e.dataTransfer.setData('text/plain', index);
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-  };
+  const handleDragOver = (e) => e.preventDefault();
 
   const handleDrop = (e, dropIndex) => {
     e.preventDefault();
@@ -536,10 +559,7 @@ const App = () => {
       const newFiles = [...prev];
       const [draggedItem] = newFiles.splice(dragIndex, 1);
       newFiles.splice(dropIndex, 0, draggedItem);
-      return newFiles.map((file, index) => ({
-        ...file,
-        order: index + 1
-      }));
+      return newFiles.map((file, index) => ({ ...file, order: index + 1 }));
     });
   };
 
@@ -578,9 +598,7 @@ const App = () => {
       }
     };
     document.addEventListener('touchmove', preventTouchScroll, { passive: false });
-    return () => {
-      document.removeEventListener('touchmove', preventTouchScroll);
-    };
+    return () => document.removeEventListener('touchmove', preventTouchScroll);
   }, []);
 
   return (
@@ -588,23 +606,14 @@ const App = () => {
       <header className="header">
         <div className="header-title">PageTurner</div>
         <div className="header-actions">
-          <button
-            className={`upload-button practice-mode-btn${isPracticeMode ? ' active' : ''}`}
-            onClick={togglePracticeMode}
-          >
-            <span className="icon">{isPracticeMode ? '✅' : '🎵'}</span>
-            {isPracticeMode ? '退出练习' : '练习模式'}
+          <button className={`upload-button practice-mode-btn${isPracticeMode ? ' active' : ''}`} onClick={togglePracticeMode}>
+            <span className="icon">{isPracticeMode ? '✅' : '📝'}</span>
+            {isPracticeMode ? '退出练习模式' : '练习模式'}
           </button>
-          <button
-            className="upload-button"
-            onClick={() => setShowUpload(true)}
-          >
-            <span className="icon">📤</span> 上传谱子
+          <button className="upload-button" onClick={() => setShowUpload(true)}>
+            <span className="icon">📤</span> 上传乐谱
           </button>
-          <button
-            className="settings-toggle"
-            onClick={() => setSettingsOpen(!settingsOpen)}
-          >
+          <button className="settings-toggle" onClick={() => setSettingsOpen(!settingsOpen)}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
               <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l-.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l-.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v-.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l-.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
@@ -613,11 +622,7 @@ const App = () => {
         </div>
       </header>
       <div className="container">
-        <ScoreSidebar
-          onSelectScore={handleSelectScore}
-          currentSheetImages={sheetImages}
-          currentMarkers={isPracticeMode ? practiceMarkers : markers}
-        />
+        <ScoreSidebar />
         <div className={`settings ${settingsOpen ? 'open' : ''}`}>
           <label>
             每页标记数量:
@@ -638,58 +643,79 @@ const App = () => {
             />
           </label>
           <label>
-            停顿时间 (ms):
+            滚动偏移 (0.1-0.9):
             <input
               type="number"
-              value={pauseDuration}
-              onChange={handlePauseDurationChange}
-              min="500"
-              max="5000"
-              step="100"
+              value={scrollTopOffset}
+              onChange={handleScrollTopOffsetChange}
+              min="0.1"
+              max="0.9"
+              step="0.05"
             />
           </label>
-          <div className="timing-info">
-            每页演奏时间: {((pauseDuration * 3 + FIXED_SCROLL_DURATION * 3) / 1000).toFixed(1)} 秒
-          </div>
-          <div className="timing-info">
-            当前位置：{getCurrentMarkerText()}
-          </div>
-          <div className="debug-info" style={{ marginTop: '20px', borderTop: '1px solid #ccc', paddingTop: '10px' }}>
-            <h4>Debug Variables:</h4>
-            <div>currentMarkerIndex: {currentMarkerIndex}</div>
-            <div>isScrolling: {isScrolling.toString()}</div>
-            <div>isDragging: {isDragging.toString()}</div>
-            <div>justFinishedDragging: {justFinishedDragging.toString()}</div>
-            <div>showProgress: {showProgress.toString()}</div>
-            <div>markers.length: {(isPracticeMode ? practiceMarkers : markers).length}</div>
-            <div>isPracticeMode: {isPracticeMode.toString()}</div>
-            <div>markers:</div>
-            <div style={{ fontSize: '12px', marginLeft: '10px' }}>
-              {(isPracticeMode ? practiceMarkers : markers).map((marker, index) => (
-                <div key={marker.id}>
-                  id: {marker.id}, page: {marker.page}, position: {marker.position}
-                  {index === currentMarkerIndex ? ' (current)' : ''}
-                </div>
-              ))}
+          <label>
+            暂停时间 (秒):
+            <input
+              type="number"
+              value={pauseDuration || ''}
+              onChange={handlePauseDurationChange}
+              min="0.5"
+              max="30"
+              step="0.1"
+            />
+          </label>
+          <div className="measures-row" style={{ gap: '12px', marginBottom: '-8px' }}>
+            <label htmlFor="timer-toggle" className="measures-label" style={{ whiteSpace: 'nowrap' }}>显示滚动计时器:</label>
+            <div className="checkbox-wrapper" style={{ marginBottom: 0 }}>
+              <input
+                type="checkbox"
+                className="checkbox-toggle"
+                id="timer-toggle"
+                checked={showTimerWhileScrolling}
+                onChange={(e) => setShowTimerWhileScrolling(e.target.checked)}
+              />
+              <label htmlFor="timer-toggle" className="checkbox-label" style={{ top: 0, right: 0 }}></label>
             </div>
           </div>
+          <div className="measures-row">
+            <span className="measures-label">标记间小节数计算</span>
+            <span className="checkbox-wrapper">
+              <input
+                type="checkbox"
+                className="checkbox-toggle"
+                id="measures-toggle"
+                checked={isMeasuresAutoEnabled}
+                onChange={(e) => setIsMeasuresAutoEnabled(e.target.checked)}
+              />
+              <label htmlFor="measures-toggle" className="checkbox-label"></label>
+            </span>
+            <input
+              type="number"
+              className="measures-input"
+              value={measuresBetweenMarkers || ''}
+              onChange={handleMeasuresBetweenMarkersChange}
+              disabled={!isMeasuresAutoEnabled}
+              placeholder="输入小节数"
+              min="1"
+            />
+          </div>
+          <div className="timing-info">
+            每页预计停留时间: {((Number(pauseDuration) || 0) * markersPerPage + FIXED_SCROLL_DURATION * markersPerPage).toFixed(1)} 秒
+          </div>
+          <div className="timing-info">
+            当前位置: {getCurrentMarkerText()}
+          </div>
+          <Metronome onBpmChange={handleBpmChange} /> {/* Pass callback to sync bpm */}
         </div>
         {!isUpdatingSheets && (
           <div
             className="scrollArea"
             ref={scrollAreaRef}
-            style={{
-              width: `${sheetWidth}%`,
-              '--sheet-width': `${sheetWidth}%`
-            }}
+            style={{ width: `${sheetWidth}%`, '--sheet-width': `${sheetWidth}%` }}
           >
             {sheetImages.map((imageUrl, pageNum) => (
               <div key={`page-${pageNum}-${imageUrl}`} className="sheet-container">
-                <img
-                  src={imageUrl}
-                  alt={`乐谱 ${pageNum + 1}`}
-                  className="sheet"
-                />
+                <img src={imageUrl} alt={`乐谱 ${pageNum + 1}`} className="sheet" />
                 <div
                   className="clickable-edge"
                   style={{
@@ -733,9 +759,7 @@ const App = () => {
                         const handleMouseMove = (moveEvent) => {
                           moveEvent.preventDefault();
                           moveEvent.stopPropagation();
-                          if (scrollAreaRef.current && scrollTopRef.current !== null) {
-                            scrollAreaRef.current.scrollTop = scrollTopRef.current;
-                          }
+                          if (scrollAreaRef.current && scrollTopRef.current !== null) scrollAreaRef.current.scrollTop = scrollTopRef.current;
                           const deltaY = moveEvent.clientY - startY;
                           const containerHeight = container.offsetHeight;
                           const newPosition = startPos + (deltaY / containerHeight);
@@ -767,9 +791,7 @@ const App = () => {
                         const handleTouchMove = (moveEvent) => {
                           moveEvent.preventDefault();
                           moveEvent.stopPropagation();
-                          if (scrollAreaRef.current && scrollTopRef.current !== null) {
-                            scrollAreaRef.current.scrollTop = scrollTopRef.current;
-                          }
+                          if (scrollAreaRef.current && scrollTopRef.current !== null) scrollAreaRef.current.scrollTop = scrollTopRef.current;
                           const touchMove = moveEvent.touches[0];
                           const deltaY = touchMove.clientY - startY;
                           const containerHeight = container.offsetHeight;
@@ -823,7 +845,7 @@ const App = () => {
                 }
                 setIsScrolling(true);
                 isScrollingRef.current = true;
-                setRemainingTime(pauseDuration);
+                setRemainingTime(pauseDuration * 1000);
                 setShowProgress(true);
                 console.log('Control Start: showProgress set to true');
                 if (currentMarkerIndex === -1 || currentMarkerIndex >= activeMarkers.length) {
@@ -833,10 +855,7 @@ const App = () => {
                     const marker = activeMarkers[0];
                     const containerHeight = window.innerHeight;
                     const pageHeight = scrollArea.scrollHeight / totalPages;
-                    const targetScroll =
-                      pageHeight * (marker.page - 1) +
-                      pageHeight * marker.position -
-                      containerHeight / 2;
+                    const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
                     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION);
                   }
                 }
@@ -854,12 +873,15 @@ const App = () => {
           </button>
           <button className="downButton" onClick={() => scrollToMarker('down')}></button>
         </div>
-        {showProgress && (
-          <div className="progress-container">
-            <CircularProgress
-              pauseDuration={pauseDuration}
-              remainingTime={remainingTime}
-            />
+        {showProgress && showTimerWhileScrolling && (
+          <div
+            className="progress-container"
+            style={{
+              top: `calc(${scrollTopOffset * 100}vh + 50px)`,
+              left: `calc(${(100 + sheetWidth) / 2}vw + 20px)`
+            }}
+          >
+            <CircularProgress pauseDuration={pauseDuration * 1000} remainingTime={remainingTime} />
           </div>
         )}
         <div className={`upload-area ${showUpload ? 'show' : ''}`}>
@@ -874,8 +896,8 @@ const App = () => {
             }}
             onDragOver={(e) => e.preventDefault()}
           >
-            <p>点击或拖拽文件到此处上传</p>
-            <p className="text-sm text-gray-500">支持 JPG、PNG 格式</p>
+            <p>点击或拖放文件到此处上传</p>
+            <p className="text-sm text-gray-500">支持 JPG 和 PNG 格式</p>
           </div>
           <input
             type="file"
@@ -901,18 +923,8 @@ const App = () => {
             ))}
           </div>
           <div className="upload-actions">
-            <button
-              className="upload-button-secondary"
-              onClick={() => setShowUpload(false)}
-            >
-              取消
-            </button>
-            <button
-              className="upload-button-primary"
-              onClick={handleConfirmUpload}
-            >
-              确认上传
-            </button>
+            <button className="upload-button-secondary" onClick={() => setShowUpload(false)}>取消</button>
+            <button className="upload-button-primary" onClick={handleConfirmUpload}>确认上传</button>
           </div>
         </div>
       </div>

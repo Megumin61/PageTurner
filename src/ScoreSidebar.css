@@ -14,7 +14,7 @@
     color: var(--text-color);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    padding-bottom: 100px; /* 缁欏簳閮ㄥ鐣欑┖闂达紝鐪嬭捣鏉ユ洿鑸掑睍 */
+    padding-bottom: 100px; /* 给底部多留空间，看起来更舒展 */
   }
   
   .score-sidebar.open {

@@ -75,6 +75,7 @@ body {
   font-size: 14px;
   color: var(--text-color);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .settings.open {
@@ -104,6 +105,21 @@ body {
   outline: none;
   border-color: var(--accent-color);
   box-shadow: 0 0 4px rgba(139, 69, 19, 0.2);
+}
+
+.settings button {
+  padding: 6px 12px;
+  margin-left: 10px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.settings button:hover {
+  background-color: #7c3b0d;
 }
 
 .scrollArea {
@@ -260,16 +276,12 @@ body {
 }
 
 .progress-container {
-  position: absolute;
-  right:8%; /* Move closer to sheet, 2% offset */
-  top: 50%;
-  transform: translateY(15%);
-  width: 90px;
-  height: 90px;
+  position: fixed;
+  transform: translateY(-50%);
+  z-index: 1100;
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 1300;
+  gap: 10px;
 }
 
 .circular-progress {
@@ -284,6 +296,7 @@ body {
   justify-content: center;
   z-index: 1300;
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .progress-circle {
@@ -388,6 +401,7 @@ body {
   height: 60px;
   background: var(--surface-gradient);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 2px 20px rgba(93, 58, 31, 0.08);
   display: flex;
   align-items: center;
@@ -473,6 +487,7 @@ body {
   max-width: 600px;
   background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   padding: 32px;
   border-radius: 16px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
@@ -580,7 +595,7 @@ body {
 .header-nav {
   display: flex;
   gap: 32px;
-  margin-left: 48px;
+  margin-left: 30px;
 }
 
 .header-nav a {
@@ -667,4 +682,85 @@ body {
 
 .upload-button.active {
   background-color: #7c3b0d;
+}
+
+/* New CSS for metronome section */
+.metronome-section {
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.metronome-section h4 {
+  margin: 0 0 8px 0;
+  font-weight: 500;
+}
+
+.metronome-section div {
+  margin-bottom: 4px;
+}
+.measures-row {
+  display: flex;
+  align-items: center;
+  gap: 22px; /* 控制整体间距 */
+  margin-bottom: 0px;
+}
+
+.measures-label {
+  font-size: 14px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.checkbox-wrapper {
+  display: flex;
+  align-items: center; /* 居中对齐 */
+  margin-bottom: 8px; /* 移除偏移 */
+}
+
+.checkbox-toggle {
+  display: none;
+}
+
+.checkbox-label {
+  display: inline-block;
+  width: 16px; /* 缩小复选框本体 */
+  height: 16px;
+  border: 2px solid var(--divider-color);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  position: relative;
+  top:12px;
+  right:20px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+
+.checkbox-toggle:checked + .checkbox-label {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.checkbox-label:after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 6px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: scale(0.8) rotate(45deg);
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.checkbox-toggle:checked + .checkbox-label:after {
+  opacity: 1;
+  transform: scale(1) rotate(45deg);
+}
+
+.measures-input {
+  width: 80px;
+  margin-left: auto;
 }

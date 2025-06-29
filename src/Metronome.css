@@ -1,0 +1,195 @@
+:root {
+    --primary-color: #6B4423;
+    --secondary-color: #C1A27B;
+    --background-color: #FFFCF7;
+    --text-color: #3D2B1F;
+    --accent-color: #B37540;
+    --subtle-color: #F2E6DC;
+    --divider-color: #D8C8BB;
+}
+
+.metronome-container {
+    border-top: 1px solid var(--divider-color);
+    padding: 16px 0;
+    margin: 16px auto;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.metronome-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 80px;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 44px;
+}
+
+.metronome-row label {
+    position: relative;
+    top: 8px;
+    font-weight: 500;
+    width: 80px;
+    color: var(--text-color);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    margin-right: 12px;
+}
+
+.metronome-input,
+.metronome-select,
+.metronome-radio-group {
+    position: relative;
+    width: 80px;
+    padding: 8px 12px;
+    border: 1px solid var(--divider-color);
+    border-radius: 8px;
+    background-color: #FFFCF4;
+    font-size: 14px;
+    color: var(--text-color);
+    flex-shrink: 0;
+    transition: border-color 0.2s ease, box-shadow 0.2s;
+    height: 36px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+}
+
+.metronome-radio-group {
+    display: flex;
+    gap: 8px;
+    padding: 0 12px;
+    justify-content: space-between;
+}
+
+.metronome-radio {
+    display: none;
+}
+
+.metronome-radio-label {
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-color);
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.metronome-radio:checked+.metronome-radio-label {
+    background: var(--accent-color);
+    color: white;
+}
+
+.metronome-input:focus,
+.metronome-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 6px rgba(139, 69, 19, 0.3);
+}
+
+.metronome-button {
+    position: relative;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #8B4513 0%, #6B4423 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(139, 69, 19, 0.2);
+    transition: all 0.2s ease;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 80px;
+}
+
+.metronome-button:hover {
+    background: linear-gradient(135deg, #7c3b0d 0%, #593920 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(139, 69, 19, 0.3);
+}
+
+.metronome-title {
+    font-family: 'Arial', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--primary-color);
+    text-align: left;
+    margin-bottom: 8px;
+}
+
+/* -----  滑动条样式  ----- */
+
+.metronome-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--divider-color);
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.metronome-slider:focus {
+    outline: none;
+}
+
+.metronome-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    transition: transform 0.15s ease;
+}
+
+.metronome-slider::-webkit-slider-thumb:active {
+    transform: scale(1.15);
+}
+
+/* Firefox */
+.metronome-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    transition: transform 0.15s ease;
+}
+
+.metronome-slider::-moz-range-thumb:active {
+    transform: scale(1.15);
+}
+
+/* 进度条颜色（Firefox）*/
+.metronome-slider::-moz-range-track {
+    background: transparent;
+}
+
+.metronome-slider::-moz-range-progress {
+    background: var(--accent-color);
+    height: 6px;
+    border-radius: 3px;
+}
+
+/* Edge / IE */
+.metronome-slider::-ms-fill-lower {
+    background: var(--accent-color);
+    border-radius: 3px;
+}
+
+.metronome-slider::-ms-fill-upper {
+    background: var(--divider-color);
+    border-radius: 3px;
+}
