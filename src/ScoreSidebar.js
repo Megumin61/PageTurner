@@ -4,7 +4,7 @@ import './ScoreSidebar.css';
 import { saveImage } from './db';
 const LOCAL_STORAGE_KEY = 'pageTurner_savedScores';
 
-const ScoreSidebar = ({ onSelectScore, currentSheetImages, currentMarkers }) => {
+const ScoreSidebar = ({ onSelectScore, currentSheetImages, currentMarkers, currentAnnotations, currentDrawingPaths, currentPracticeMarkers }) => {
   const [savedScores, setSavedScores] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -33,7 +33,15 @@ const ScoreSidebar = ({ onSelectScore, currentSheetImages, currentMarkers }) => 
         imageKeys.push(key);
       }
   
-      const newEntry = { id, name, markers: currentMarkers, imageKeys };
+      const newEntry = { 
+        id, 
+        name, 
+        markers: currentMarkers, 
+        imageKeys,
+        annotations: currentAnnotations || [],
+        drawingPaths: currentDrawingPaths || [],
+        practiceMarkers: currentPracticeMarkers || []
+      };
       const saved = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
       const updatedScores = [newEntry, ...saved];
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedScores));
@@ -59,7 +67,7 @@ const ScoreSidebar = ({ onSelectScore, currentSheetImages, currentMarkers }) => 
   return (
     <>
     <div className="sidebar-toggle" onClick={() => setIsOpen(!isOpen)}>
-        {isOpen ? '⮜' : '谱子'}
+        {isOpen ? '←' : '谱子'}
     </div>
     <div className={`score-sidebar ${isOpen ? 'open' : ''}`}>
         <div className="sidebar-top">
@@ -72,14 +80,12 @@ const ScoreSidebar = ({ onSelectScore, currentSheetImages, currentMarkers }) => 
         {savedScores.map(score => (
             <li key={score.id}>
             <span onClick={() => handleSelect(score)}>{score.name}</span>
-            <button onClick={() => deleteScore(score.id)}>✕</button>
+            <button onClick={() => deleteScore(score.id)}>✖</button>
             </li>
         ))}
         </ul>
     </div>
     </>
-
-
   );
 };
 

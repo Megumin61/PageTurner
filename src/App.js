@@ -5,6 +5,7 @@ import { getImage } from './db';
 import * as Tone from 'tone'; // Import Tone.js via CDN or manual setup
 import ScoreSidebar from './ScoreSidebar';
 import './ScoreSidebar.css';
+import AnnotationToolbar from './AnnotationToolbar';
 
 function CircularProgress({ pauseDuration, remainingTime }) {
   const circumference = 100;
@@ -59,6 +60,14 @@ const App = () => {
   const [isMetronomePlaying, setIsMetronomePlaying] = useState(false); // Metronome toggle
   const [measuresBetweenMarkers, setMeasuresBetweenMarkers] = useState(''); // Number of measures between markers
   const [showTimerWhileScrolling, setShowTimerWhileScrolling] = useState(true);
+  const [isAnnotationMode, setIsAnnotationMode] = useState(false);
+  const [annotations, setAnnotations] = useState([]);
+  const [selectedTool, setSelectedTool] = useState(null);
+  const [draggingAnnotationId, setDraggingAnnotationId] = useState(null);
+  const [drawingPaths, setDrawingPaths] = useState([]);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const canvasRefs = useRef({});
+  const [selectedSticker, setSelectedSticker] = useState(null);
 
   const initializeMarkers = useCallback((numMarkers, pages) => {
     const markers = [];
@@ -158,6 +167,10 @@ const App = () => {
     setSheetImages([]);
     setPracticeMarkers([]);
     setIsPracticeMode(false);
+    // 清空当前的标注和绘图
+    setAnnotations([]);
+    setDrawingPaths([]);
+    
     let images = [];
     try {
       if (score.imageKeys && Array.isArray(score.imageKeys) && score.imageKeys.length > 0) {
@@ -168,7 +181,7 @@ const App = () => {
         }));
         images = blobs.filter(blob => blob instanceof Blob).map(blob => URL.createObjectURL(blob));
         if (images.length === 0) {
-          alert("无法从数据库加载图片，可能是被删除?");
+          alert("无法从数据库加载图片，可能是被删除");
           return;
         }
       } else if (score.images && Array.isArray(score.images) && score.images.length > 0) {
@@ -183,6 +196,20 @@ const App = () => {
       setCurrentMarkerIndex(0);
       setIsScrolling(false);
       setShowProgress(false);
+      
+      // 加载练习模式标记
+      if (score.practiceMarkers && Array.isArray(score.practiceMarkers)) {
+        setPracticeMarkers(score.practiceMarkers);
+      }
+      
+      // 加载标注和绘图路径
+      if (score.annotations && Array.isArray(score.annotations)) {
+        setAnnotations(score.annotations);
+      }
+      
+      if (score.drawingPaths && Array.isArray(score.drawingPaths)) {
+        setDrawingPaths(score.drawingPaths);
+      }
     } catch (error) {
       console.error("加载乐谱失败:", error);
       alert("加载乐谱失败，请检查网络或数据库");
@@ -524,15 +551,64 @@ const App = () => {
     });
   };
 
+  const toggleAnnotationMode = () => {
+    setIsAnnotationMode(prev => {
+      if (prev) {
+        setSelectedTool(null); // Reset selected tool when leaving mode
+      }
+      return !prev;
+    });
+  };
+
+  const handleAnnotationUpdate = (id, updates) => {
+    setAnnotations(prev => 
+      prev.map(ann => ann.id === id ? { ...ann, ...updates } : ann)
+    );
+  };
+
+  const deleteAnnotation = (id) => {
+    setAnnotations(prev => prev.filter(ann => ann.id !== id));
+  };
+
   const handleSheetClick = (e, pageNum) => {
     e.preventDefault();
     e.stopPropagation();
+
     const container = e.currentTarget;
     const rect = container.getBoundingClientRect();
     const clickY = e.clientY - rect.top;
-    const containerHeight = container.offsetHeight;
-    const position = clickY / containerHeight;
-    addMarker(pageNum + 1, position, isPracticeMode ? practiceMarkers.length : markers.reduce((max, m) => Math.max(max, m.id), 0));
+    const positionY = clickY / container.offsetHeight;
+    const clickX = e.clientX - rect.left;
+    const positionX = clickX / container.offsetWidth;
+
+    if (isAnnotationMode) {
+      if (!selectedTool) {
+        return; // Silently do nothing if no tool is selected
+      }
+
+      if (selectedTool === 'brush') {
+        // Drawing logic is handled by onMouseDown on the canvas container
+        return;
+      }
+
+      const newAnnotation = {
+        id: Date.now(),
+        page: pageNum + 1,
+        x: positionX,
+        y: positionY,
+        type: selectedTool === 'text' ? 'text' : 'sticker',
+        stickerSrc: selectedTool === 'text' ? null : selectedTool,
+        text: '',
+        isEditing: true,
+      };
+      setAnnotations(prev => [...prev, newAnnotation]);
+      setSelectedTool(null); // Deselect tool after placing it
+      return;
+    }
+
+    if (isPracticeMode) {
+      addMarker(pageNum + 1, positionY, practiceMarkers.length);
+    }
   };
 
   const handleFileUpload = (event) => {
@@ -585,9 +661,20 @@ const App = () => {
       setMarkers(initializeMarkers(markersPerPage, newSheets.length));
       setPracticeMarkers([]);
       setIsPracticeMode(false);
+      // 清除标注和绘图路径
+      setAnnotations([]);
+      setDrawingPaths([]);
       setShowUpload(false);
       setIsUpdatingSheets(false);
     });
+  };
+
+  const toggleAnnotationBubble = (id) => {
+    setAnnotations(prev =>
+      prev.map(ann =>
+        ann.id === id ? { ...ann, showBubble: !ann.showBubble } : ann
+      )
+    );
   };
 
   useEffect(() => {
@@ -601,17 +688,46 @@ const App = () => {
     return () => document.removeEventListener('touchmove', preventTouchScroll);
   }, []);
 
+  useEffect(() => {
+    Object.values(canvasRefs.current).forEach(canvas => {
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawingPaths.forEach(path => {
+          if (canvas.dataset.page == path.page) {
+            ctx.beginPath();
+            ctx.moveTo(path.points[0].x * canvas.width, path.points[0].y * canvas.height);
+            path.points.forEach(point => {
+              ctx.lineTo(point.x * canvas.width, point.y * canvas.height);
+            });
+            ctx.strokeStyle = '#C3984F'; // New brush color
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+          }
+        });
+      }
+    });
+  }, [drawingPaths]);
+
   return (
     <>
       <header className="header">
         <div className="header-title">PageTurner</div>
         <div className="header-actions">
+          <AnnotationToolbar 
+            isAnnotationMode={isAnnotationMode}
+            toggleAnnotationMode={toggleAnnotationMode}
+            selectedTool={selectedTool}
+            setSelectedTool={setSelectedTool}
+          />
           <button className={`upload-button practice-mode-btn${isPracticeMode ? ' active' : ''}`} onClick={togglePracticeMode}>
-            <span className="icon">{isPracticeMode ? '✅' : '📝'}</span>
-            {isPracticeMode ? '退出练习模式' : '练习模式'}
+            <span className="icon">{isPracticeMode ? '✓' : '📝'}</span>
+            {isPracticeMode ? '退出练习' : '练习模式'}
           </button>
           <button className="upload-button" onClick={() => setShowUpload(true)}>
-            <span className="icon">📤</span> 上传乐谱
+            <span className="icon">📄</span> 上传乐谱
           </button>
           <button className="settings-toggle" onClick={() => setSettingsOpen(!settingsOpen)}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -622,7 +738,14 @@ const App = () => {
         </div>
       </header>
       <div className="container">
-        <ScoreSidebar />
+        <ScoreSidebar 
+          onSelectScore={handleSelectScore}
+          currentSheetImages={sheetImages}
+          currentMarkers={markers}
+          currentAnnotations={annotations}
+          currentDrawingPaths={drawingPaths}
+          currentPracticeMarkers={practiceMarkers}
+        />
         <div className={`settings ${settingsOpen ? 'open' : ''}`}>
           <label>
             每页标记数量:
@@ -716,22 +839,53 @@ const App = () => {
             {sheetImages.map((imageUrl, pageNum) => (
               <div key={`page-${pageNum}-${imageUrl}`} className="sheet-container">
                 <img src={imageUrl} alt={`乐谱 ${pageNum + 1}`} className="sheet" />
+                <canvas 
+                  ref={el => canvasRefs.current[pageNum] = el}
+                  data-page={pageNum + 1}
+                  className="drawing-canvas"
+                  width={1000} // Set a base resolution
+                  height={1414}
+                />
                 <div
                   className="clickable-edge"
                   style={{
                     position: 'absolute',
                     right: 0,
                     top: 0,
-                    width: '30px',
+                    width: '100%',
                     height: '100%',
-                    cursor: 'pointer',
+                    cursor: isAnnotationMode ? 'crosshair' : (isPracticeMode ? 'pointer' : 'default'),
                     background: 'rgba(0,0,0,0.1)',
                     opacity: 0,
                     transition: 'opacity 0.2s'
                   }}
-                  onMouseEnter={(e) => isPracticeMode && (e.currentTarget.style.opacity = '0.3')}
+                  onMouseEnter={(e) => (isPracticeMode || isAnnotationMode) && (e.currentTarget.style.opacity = '0.05')}
                   onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
-                  onClick={(e) => isPracticeMode && handleSheetClick(e, pageNum)}
+                  onMouseDown={(e) => {
+                    if (selectedTool === 'brush') {
+                      setIsDrawing(true);
+                      const canvas = canvasRefs.current[pageNum];
+                      const rect = canvas.getBoundingClientRect();
+                      const x = (e.clientX - rect.left) / rect.width;
+                      const y = (e.clientY - rect.top) / rect.height;
+                      setDrawingPaths([...drawingPaths, { page: pageNum + 1, points: [{ x, y }] }]);
+                    } else {
+                      handleSheetClick(e, pageNum);
+                    }
+                  }}
+                  onMouseMove={(e) => {
+                    if (isDrawing && selectedTool === 'brush') {
+                      const canvas = canvasRefs.current[pageNum];
+                      const rect = canvas.getBoundingClientRect();
+                      const x = (e.clientX - rect.left) / rect.width;
+                      const y = (e.clientY - rect.top) / rect.height;
+                      const newPaths = [...drawingPaths];
+                      newPaths[newPaths.length - 1].points.push({ x, y });
+                      setDrawingPaths(newPaths);
+                    }
+                  }}
+                  onMouseUp={() => setIsDrawing(false)}
+                  onMouseOut={() => setIsDrawing(false)}
                 />
                 {(isPracticeMode ? practiceMarkers : markers)
                   .filter(marker => marker.page === pageNum + 1)
@@ -805,7 +959,7 @@ const App = () => {
                           lastDragTimeRef.current = Date.now();
                           console.log('Touch end: Drag ended, set lastDragTime');
                           document.removeEventListener('touchmove', handleTouchMove);
-                          document.removeEventListener('touchend', handleTouchEnd);
+                          document.addEventListener('touchend', handleTouchEnd);
                         };
 
                         document.addEventListener('touchmove', handleTouchMove, { passive: false });
@@ -828,6 +982,168 @@ const App = () => {
                       )}
                     </div>
                   ))}
+                {annotations
+                  .filter(ann => ann.page === pageNum + 1)
+                  .map(ann => {
+                    if (ann.type === 'sticker') {
+                      return (
+                        <div
+                          key={ann.id}
+                          className={`annotation-marker ${ann.isEditing ? 'editing' : ''} ${draggingAnnotationId === ann.id ? 'dragging' : ''}`}
+                          style={{
+                            position: 'absolute',
+                            left: `${ann.x * 100}%`,
+                            top: `${ann.y * 100}%`,
+                            transform: 'translate(-50%, -50%)',
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+
+                            let moved = false;
+                            const container = e.currentTarget.parentElement;
+                            const startX = e.clientX;
+                            const startY = e.clientY;
+                            const startPos = { x: ann.x, y: ann.y };
+
+                            const handleMouseMove = (moveEvent) => {
+                              if (!moved && (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3)) {
+                                moved = true;
+                                setDraggingAnnotationId(ann.id);
+                              }
+                              
+                              if (moved) {
+                                const deltaX = moveEvent.clientX - startX;
+                                const deltaY = moveEvent.clientY - startY;
+                                const newX = startPos.x + (deltaX / container.offsetWidth);
+                                const newY = startPos.y + (deltaY / container.offsetHeight);
+                                handleAnnotationUpdate(ann.id, { x: newX, y: newY });
+                              }
+                            };
+
+                            const handleMouseUp = () => {
+                              setDraggingAnnotationId(null);
+                              if (!moved) {
+                                // This is a click, not a drag. Re-enter editing mode.
+                                handleAnnotationUpdate(ann.id, { isEditing: true });
+                              }
+                              document.removeEventListener('mousemove', handleMouseMove);
+                              document.removeEventListener('mouseup', handleMouseUp);
+                            };
+
+                            document.addEventListener('mousemove', handleMouseMove);
+                            document.addEventListener('mouseup', handleMouseUp);
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            handleAnnotationUpdate(ann.id, { isEditing: true });
+                          }}
+                        >
+                          <img src={ann.stickerSrc} alt="annotation" />
+                          <div className="annotation-delete-btn" onClick={(e) => {
+                            e.stopPropagation();
+                            deleteAnnotation(ann.id);
+                          }}>脳</div>
+
+                          {ann.isEditing ? (
+                            <div className="annotation-bubble" onMouseDown={e => e.stopPropagation()}>
+                               <div 
+                                className="annotation-bubble-close-btn"
+                                onClick={() => handleAnnotationUpdate(ann.id, { isEditing: false })}
+                              >脳</div>
+                              <textarea
+                                className="annotation-textarea"
+                                value={ann.text}
+                                onChange={(e) => handleAnnotationUpdate(ann.id, { text: e.target.value })}
+                                onBlur={() => handleAnnotationUpdate(ann.id, { isEditing: false })}
+                                autoFocus
+                              />
+                            </div>
+                          ) : (
+                            ann.text && (
+                              <div className="annotation-text-view">
+                                {ann.text}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      );
+                    }
+                    if (ann.type === 'text') {
+                      return (
+                        <div
+                          key={ann.id}
+                          className={`text-annotation ${ann.isEditing ? 'editing' : ''} ${draggingAnnotationId === ann.id ? 'dragging' : ''}`}
+                          style={{
+                            position: 'absolute',
+                            left: `${ann.x * 100}%`,
+                            top: `${ann.y * 100}%`,
+                          }}
+                          onMouseDown={(e) => {
+                             e.preventDefault();
+                             e.stopPropagation();
+ 
+                             let moved = false;
+                             const container = e.currentTarget.parentElement;
+                             const startX = e.clientX;
+                             const startY = e.clientY;
+                             const startPos = { x: ann.x, y: ann.y };
+ 
+                             const handleMouseMove = (moveEvent) => {
+                               if (!moved && (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3)) {
+                                 moved = true;
+                                 setDraggingAnnotationId(ann.id);
+                               }
+                               
+                               if (moved) {
+                                 const deltaX = moveEvent.clientX - startX;
+                                 const deltaY = moveEvent.clientY - startY;
+                                 const newX = startPos.x + (deltaX / container.offsetWidth);
+                                 const newY = startPos.y + (deltaY / container.offsetHeight);
+                                 handleAnnotationUpdate(ann.id, { x: newX, y: newY });
+                               }
+                             };
+ 
+                             const handleMouseUp = () => {
+                               setDraggingAnnotationId(null);
+                               if (!moved) {
+                                 // This is a click, not a drag. Re-enter editing mode.
+                                 handleAnnotationUpdate(ann.id, { isEditing: true });
+                               }
+                               document.removeEventListener('mousemove', handleMouseMove);
+                               document.removeEventListener('mouseup', handleMouseUp);
+                             };
+ 
+                             document.addEventListener('mousemove', handleMouseMove);
+                             document.addEventListener('mouseup', handleMouseUp);
+                           }}
+                        >
+                           {ann.isEditing ? (
+                             <div className="annotation-bubble" onMouseDown={e => e.stopPropagation()}>
+                                <div 
+                                 className="annotation-bubble-close-btn"
+                                 onClick={() => handleAnnotationUpdate(ann.id, { isEditing: false })}
+                               >脳</div>
+                                <textarea
+                                 className="annotation-textarea"
+                                  value={ann.text}
+                                  onChange={(e) => handleAnnotationUpdate(ann.id, { text: e.target.value })}
+                                  onBlur={() => handleAnnotationUpdate(ann.id, { isEditing: false })}
+                                  autoFocus
+                                />
+                             </div>
+                            ) : (
+                              <div className="text-annotation-view">{ann.text || '...'}</div>
+                            )}
+                           <div className="annotation-delete-btn" onClick={(e) => {
+                              e.stopPropagation();
+                              deleteAnnotation(ann.id);
+                          }}>脳</div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
               </div>
             ))}
           </div>

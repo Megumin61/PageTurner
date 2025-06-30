@@ -1,0 +1,31 @@
+.draggable-element {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  will-change: transform;
+  position: absolute;
+  z-index: 10;
+}
+
+.draggable-element.dragging {
+  z-index: 20;
+  pointer-events: none; /* 拖动过程中避免其他事件干扰 */
+}
+
+/* 添加拖动手柄样式，如果需要的话 */
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+/* 为了解决移动设备上的拖动问题 */
+@media (pointer: coarse) {
+  .draggable-element {
+    /* 移动设备上增加点击区域 */
+    min-width: 32px;
+    min-height: 32px;
+  }
+} 

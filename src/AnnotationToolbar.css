@@ -1,0 +1,100 @@
+/* AnnotationToolbar.css */
+
+.annotation-toolbar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.annotation-mode-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.annotation-mode-button img {
+  width: 100%;
+  height: 100%;
+  transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.annotation-mode-button.active img {
+  transform: rotate(360deg) scale(1.1);
+}
+
+.sticker-panel {
+  position: absolute;
+  top: 55px;
+  background-color: var(--background-color, #FFFCF7);
+  border: 1px solid var(--divider-color, #D8C8BB);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  z-index: 1500;
+  animation: fadeIn 0.3s ease-out;
+  max-height: 132px; /* (50px item + 4px padding) * 2 rows + 8px gap */
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-color, #B37540) var(--subtle-color, #F2E6DC);
+}
+
+.sticker-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sticker-panel::-webkit-scrollbar-track {
+  background: var(--subtle-color, #F2E6DC);
+  border-radius: 3px;
+}
+
+.sticker-panel::-webkit-scrollbar-thumb {
+  background-color: var(--accent-color, #B37540);
+  border-radius: 3px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sticker-item {
+  width: 50px;
+  height: 50px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px;
+  border: 2px solid transparent;
+  transition: all 0.2s ease-in-out;
+}
+
+.sticker-item:hover {
+  background-color: var(--subtle-color, #F2E6DC);
+  transform: scale(1.1);
+}
+
+.sticker-item.selected {
+  border-color: var(--accent-color, #B37540);
+  box-shadow: 0 0 8px rgba(179, 117, 64, 0.4);
+}
+
+.sticker-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+} 
