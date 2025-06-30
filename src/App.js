@@ -6,6 +6,14 @@ import * as Tone from 'tone'; // Import Tone.js via CDN or manual setup
 import ScoreSidebar from './ScoreSidebar';
 import './ScoreSidebar.css';
 import AnnotationToolbar from './AnnotationToolbar';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// 使用 new URL() 来为 worker 文件创建稳定的路径
+// 这会告诉打包工具在最终的构建输出中包含 worker 文件，并提供一个正确的链接
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url,
+).toString();
 
 function CircularProgress({ pauseDuration, remainingTime }) {
   const circumference = 100;
@@ -68,6 +76,7 @@ const App = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const canvasRefs = useRef({});
   const [selectedSticker, setSelectedSticker] = useState(null);
+  const [draggedItemIndex, setDraggedItemIndex] = useState(null);
 
   const initializeMarkers = useCallback((numMarkers, pages) => {
     const markers = [];
@@ -611,22 +620,142 @@ const App = () => {
     }
   };
 
+  const [isPdfProcessing, setIsPdfProcessing] = useState(false);
+  const [pdfProcessingProgress, setPdfProcessingProgress] = useState(0);
+
   const handleFileUpload = (event) => {
     const files = Array.from(event.target.files);
+    
     const imageFiles = files.filter(file => file.type === "image/jpeg" || file.type === "image/png");
-
-    const fileReaders = imageFiles.map(file => new Promise((resolve) => {
+    const pdfFiles = files.filter(file => file.type === "application/pdf");
+    
+    const imageReaders = imageFiles.map(file => new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve({ name: file.name, url: e.target.result, order: uploadedFiles.length + imageFiles.indexOf(file) + 1 });
       reader.readAsDataURL(file);
     }));
 
-    Promise.all(fileReaders).then(results => setUploadedFiles(prev => [...prev, ...results].sort((a, b) => a.order - b.order)));
+    Promise.all(imageReaders).then(imageResults => {
+      setUploadedFiles(prev => [...prev, ...imageResults].sort((a, b) => a.order - b.order));
+      
+      if (pdfFiles.length > 0) {
+        setIsPdfProcessing(true);
+        setPdfProcessingProgress(0);
+        
+        processPdfFiles(pdfFiles).then(pdfImageResults => {
+          setUploadedFiles(prev => {
+            const combined = [...prev, ...pdfImageResults];
+            return combined.map((file, index) => ({ ...file, order: index + 1 }));
+          });
+          setIsPdfProcessing(false);
+        }).catch(error => {
+          console.error("PDF处理错误:", error);
+          alert("PDF处理失败: " + error.message);
+          setIsPdfProcessing(false);
+        });
+      }
+    });
   };
 
-  const handleDragStart = (e, index) => e.dataTransfer.setData('text/plain', index);
+  const processPdfFiles = async (pdfFiles) => {
+    const allPdfImages = [];
+    let totalPages = 0;
+    let processedPages = 0;
 
-  const handleDragOver = (e) => e.preventDefault();
+    // 1. 先计算总页数，用于进度条
+    const pdfDocs = [];
+    for (const file of pdfFiles) {
+        try {
+            console.log(`开始处理PDF文件: ${file.name}, 大小: ${file.size} 字节`);
+            const arrayBuffer = await file.arrayBuffer();
+            console.log(`已读取文件内容，准备加载PDF文档`);
+            
+            // 添加更详细的PDF加载选项
+            const loadingTask = pdfjsLib.getDocument({
+              data: arrayBuffer,
+              cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/cmaps/',
+              cMapPacked: true,
+              standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/standard_fonts/'
+            });
+            
+            const pdf = await loadingTask.promise;
+            console.log(`PDF文档加载成功，共${pdf.numPages}页`);
+            
+            totalPages += pdf.numPages;
+            pdfDocs.push({ pdf, file });
+        } catch (error) {
+            console.error(`无法读取PDF文件 ${file.name}:`, error);
+            alert(`处理PDF文件 ${file.name} 时出错: ${error.message}`);
+        }
+    }
+
+    if (totalPages === 0) {
+        throw new Error("无法从上传的PDF文件中读取任何页面。请确保文件未损坏。");
+    }
+    
+    // 2. 逐页渲染PDF
+    for (const { pdf, file } of pdfDocs) {
+        for (let i = 1; i <= pdf.numPages; i++) {
+            try {
+                console.log(`开始渲染 ${file.name} 的第 ${i}/${pdf.numPages} 页`);
+                const page = await pdf.getPage(i);
+                
+                const viewport = page.getViewport({ scale: 2.0 });
+                console.log(`页面尺寸: ${viewport.width} x ${viewport.height}`);
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                console.log(`开始渲染页面到canvas...`);
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+                console.log(`页面渲染完成，转换为图像数据`);
+                
+                const imageUrl = canvas.toDataURL('image/jpeg', 0.9);
+                
+                allPdfImages.push({
+                    name: `${file.name.replace(/\.pdf$/i, '')}_page_${i}`,
+                    url: imageUrl,
+                    order: uploadedFiles.length + allPdfImages.length + 1,
+                    fromPdf: true,
+                    originalPdf: file.name
+                });
+                console.log(`已成功转换第 ${i} 页为图像`);
+
+                // 释放内存
+                canvas.width = 0;
+                canvas.height = 0;
+
+            } catch (pageError) {
+                console.error(`处理PDF页面错误 (${file.name}, page ${i}):`, pageError);
+            }
+
+            // 更新进度
+            processedPages++;
+            setPdfProcessingProgress(Math.round((processedPages / totalPages) * 100));
+        }
+    }
+    
+    console.log(`PDF处理完成，共生成 ${allPdfImages.length} 张图像`);
+    return allPdfImages;
+  };
+
+  const handleDragStart = (e, index) => {
+    e.dataTransfer.setData('text/plain', index);
+    setDraggedItemIndex(index);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemIndex(null);
+  };
 
   const handleDrop = (e, dropIndex) => {
     e.preventDefault();
@@ -637,6 +766,18 @@ const App = () => {
       newFiles.splice(dropIndex, 0, draggedItem);
       return newFiles.map((file, index) => ({ ...file, order: index + 1 }));
     });
+    setDraggedItemIndex(null);
+  };
+
+  const handleDeleteUploadedFile = (index) => {
+    setUploadedFiles(prev => {
+      const newFiles = [...prev].filter((_, i) => i !== index);
+      return newFiles.map((file, idx) => ({ ...file, order: idx + 1 }));
+    });
+  };
+
+  const handleAddMoreFiles = () => {
+    fileInputRef.current?.click();
   };
 
   const handleConfirmUpload = () => {
@@ -654,19 +795,48 @@ const App = () => {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    requestAnimationFrame(() => {
-      const newSheets = uploadedFiles.map(file => file.url);
-      setSheetImages(newSheets);
-      setTotalPages(newSheets.length);
-      setMarkers(initializeMarkers(markersPerPage, newSheets.length));
-      setPracticeMarkers([]);
-      setIsPracticeMode(false);
-      // 清除标注和绘图路径
-      setAnnotations([]);
-      setDrawingPaths([]);
-      setShowUpload(false);
+    
+    try {
+      requestAnimationFrame(() => {
+        try {
+          // 检查图像URL是否有效
+          const validImages = uploadedFiles.filter(file => {
+            if (!file.url) {
+              console.error(`文件 ${file.name} 不包含有效的URL`);
+              return false;
+            }
+            return true;
+          });
+          
+          if (validImages.length === 0) {
+            alert("没有有效的图像可以加载");
+            setIsUpdatingSheets(false);
+            return;
+          }
+          
+          const newSheets = validImages.map(file => file.url);
+          setSheetImages(newSheets);
+          setTotalPages(newSheets.length);
+          setMarkers(initializeMarkers(markersPerPage, newSheets.length));
+          setPracticeMarkers([]);
+          setIsPracticeMode(false);
+          // 清除标注和绘图路径
+          setAnnotations([]);
+          setDrawingPaths([]);
+          setShowUpload(false);
+          setIsUpdatingSheets(false);
+          console.log(`成功加载了 ${newSheets.length} 张谱子图像`);
+        } catch (innerError) {
+          console.error("处理上传文件时出错:", innerError);
+          alert(`处理上传文件时出错: ${innerError.message}`);
+          setIsUpdatingSheets(false);
+        }
+      });
+    } catch (outerError) {
+      console.error("确认上传时出错:", outerError);
+      alert(`确认上传时出错: ${outerError.message}`);
       setIsUpdatingSheets(false);
-    });
+    }
   };
 
   const toggleAnnotationBubble = (id) => {
@@ -710,6 +880,12 @@ const App = () => {
       }
     });
   }, [drawingPaths]);
+
+  // 添加处理关闭上传区域并清空已上传图片的函数
+  const handleCloseUpload = () => {
+    setShowUpload(false);
+    setUploadedFiles([]); // 清空已上传图片
+  };
 
   return (
     <>
@@ -855,12 +1031,7 @@ const App = () => {
                     width: '100%',
                     height: '100%',
                     cursor: isAnnotationMode ? 'crosshair' : (isPracticeMode ? 'pointer' : 'default'),
-                    background: 'rgba(0,0,0,0.1)',
-                    opacity: 0,
-                    transition: 'opacity 0.2s'
                   }}
-                  onMouseEnter={(e) => (isPracticeMode || isAnnotationMode) && (e.currentTarget.style.opacity = '0.05')}
-                  onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
                   onMouseDown={(e) => {
                     if (selectedTool === 'brush') {
                       setIsDrawing(true);
@@ -1202,24 +1373,26 @@ const App = () => {
         )}
         <div className={`upload-area ${showUpload ? 'show' : ''}`}>
           <h3>上传乐谱</h3>
-          <div
-            className="upload-dropzone"
-            onClick={() => fileInputRef.current?.click()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const files = Array.from(e.dataTransfer.files);
-              handleFileUpload({ target: { files } });
-            }}
-            onDragOver={(e) => e.preventDefault()}
-          >
-            <p>点击或拖放文件到此处上传</p>
-            <p className="text-sm text-gray-500">支持 JPG 和 PNG 格式</p>
-          </div>
+          {uploadedFiles.length === 0 && (
+            <div
+              className="upload-dropzone"
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const files = Array.from(e.dataTransfer.files);
+                handleFileUpload({ target: { files } });
+              }}
+              onDragOver={(e) => e.preventDefault()}
+            >
+              <p>点击或拖放文件到此处上传</p>
+              <p className="text-sm text-gray-500">支持 JPG、PNG 和 PDF 格式</p>
+            </div>
+          )}
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileUpload}
-            accept="image/jpeg,image/png"
+            accept="image/jpeg,image/png,application/pdf"
             multiple
             style={{ display: 'none' }}
           />
@@ -1227,21 +1400,54 @@ const App = () => {
             {uploadedFiles.map((file, index) => (
               <div
                 key={index}
-                className="preview-item"
+                className={`preview-item ${draggedItemIndex === index ? 'dragging' : ''}`}
                 draggable
                 onDragStart={(e) => handleDragStart(e, index)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
               >
                 <div className="preview-order">{file.order}</div>
                 <img src={file.url} alt={file.name} />
+                <button 
+                  className="preview-delete-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteUploadedFile(index);
+                  }}
+                >
+                  ×
+                </button>
+                <div className="preview-drag-handle">⋮⋮</div>
               </div>
             ))}
+            {uploadedFiles.length > 0 && (
+              <div className="preview-add-btn" onClick={handleAddMoreFiles}>
+                <span>+</span>
+              </div>
+            )}
           </div>
           <div className="upload-actions">
-            <button className="upload-button-secondary" onClick={() => setShowUpload(false)}>取消</button>
-            <button className="upload-button-primary" onClick={handleConfirmUpload}>确认上传</button>
+            <button className="upload-button-secondary" onClick={handleCloseUpload}>取消</button>
+            <button 
+              className="upload-button-primary" 
+              onClick={handleConfirmUpload}
+              disabled={uploadedFiles.length === 0}
+            >
+              确认上传
+            </button>
           </div>
+          {isPdfProcessing && (
+            <div className="pdf-processing-indicator">
+              <div className="processing-text">正在处理PDF文件 ({pdfProcessingProgress}%)</div>
+              <div className="processing-bar">
+                <div 
+                  className="processing-progress" 
+                  style={{width: `${pdfProcessingProgress}%`}}
+                ></div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
