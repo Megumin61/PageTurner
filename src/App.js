@@ -942,7 +942,7 @@ const App = () => {
             />
           </label>
           <label>
-            滚动偏移 (0.1-0.9):
+            标记偏移位置:
             <input
               type="number"
               value={scrollTopOffset}
@@ -953,7 +953,7 @@ const App = () => {
             />
           </label>
           <label>
-            暂停时间 (秒):
+            标记停留时间 (秒):
             <input
               type="number"
               value={pauseDuration || ''}
@@ -963,7 +963,7 @@ const App = () => {
               step="0.1"
             />
           </label>
-          <div className="measures-row" style={{ gap: '12px', marginBottom: '-8px' }}>
+          <div className="measures-row">
             <label htmlFor="timer-toggle" className="measures-label" style={{ whiteSpace: 'nowrap' }}>显示滚动计时器:</label>
             <div className="checkbox-wrapper" style={{ marginBottom: 0 }}>
               <input
@@ -976,7 +976,7 @@ const App = () => {
               <label htmlFor="timer-toggle" className="checkbox-label" style={{ top: 0, right: 0 }}></label>
             </div>
           </div>
-          <div className="measures-row">
+          <div className="measures-row" style={{ opacity: isMeasuresAutoEnabled ? 1 : 0.5, filter: isMeasuresAutoEnabled ? 'none' : 'grayscale(60%)' }}>
             <span className="measures-label">标记间小节数计算</span>
             <span className="checkbox-wrapper">
               <input
