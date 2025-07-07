@@ -98,3 +98,47 @@
     cursor: pointer;
   }
   
+/* --- 响应式布局 --- */
+
+/* 平板设备 */
+@media screen and (max-width: 1024px) {
+  .score-sidebar {
+    top: 80px;
+  }
+  .sidebar-toggle {
+    top: 80px;
+  }
+}
+
+/* 移动设备 */
+@media screen and (max-width: 768px) {
+  .score-sidebar {
+    width: 250px;
+    left: -260px; /* 增加一点，防止边缘漏出 */
+    height: 100vh;
+    top: 0;
+    padding-top: 60px; /* 为关闭按钮留出空间 */
+    border-radius: 0;
+    transition: left 0.3s ease-in-out;
+  }
+
+  .score-sidebar.open {
+    left: 0;
+  }
+
+  .sidebar-toggle {
+    top: 132px; /* 根据新的header高度调整 */
+    left: 0;
+    z-index: 1199; /* 确保在sidebar关闭时也能点击 */
+    background: var(--primary-color);
+  }
+  
+  .score-sidebar.open + .sidebar-toggle {
+     left: 250px; /* 打开时，把手移动到侧边栏外面 */
+  }
+
+  .score-list {
+    max-height: calc(100vh - 120px);
+  }
+}
+  

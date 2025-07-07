@@ -193,3 +193,43 @@
     background: var(--divider-color);
     border-radius: 3px;
 }
+
+/* --- 响应式布局 --- */
+
+@media screen and (max-width: 768px) {
+    .metronome-container {
+        max-width: 100%;
+        padding: 16px 0;
+    }
+    .metronome-row {
+        grid-template-columns: 70px 1fr 70px; /* 稍微调整列宽 */
+        gap: 8px;
+    }
+    .metronome-row label {
+        font-size: 13px;
+    }
+}
+
+@media screen and (max-width: 360px) {
+    .metronome-row {
+        grid-template-columns: 1fr; /* 在非常小的屏幕上堆叠 */
+        gap: 8px;
+        text-align: center;
+    }
+
+    .metronome-row label {
+        margin-right: 0;
+        margin-bottom: 4px;
+        justify-content: center;
+        top: 0;
+    }
+
+    .metronome-input, .metronome-button, .metronome-radio-group {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .metronome-slider {
+        grid-column: 1 / -1; /* 让滑块占据整行 */
+    }
+}
