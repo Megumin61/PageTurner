@@ -3,18 +3,13 @@ import Metronome from './Metronome';
 import "./App.css";
 import "./site-footer.css";
 import { getImage } from './db';
-import * as Tone from 'tone'; // Import Tone.js via CDN or manual setup
 import ScoreSidebar from './ScoreSidebar';
 import './ScoreSidebar.css';
 import AnnotationToolbar from './AnnotationToolbar';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// 使用 new URL() 来为 worker 文件创建稳定的路径
-// 这会告诉打包工具在最终的构建输出中包含 worker 文件，并提供一个正确的链接
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url,
-).toString();
+// postinstall copies the worker into public so browsers and Jest use one stable path.
+pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL}/pdf.worker.min.js`;
 
 function CircularProgress({ pauseDuration, remainingTime }) {
   const circumference = 100;
@@ -56,6 +51,13 @@ const getPageHeight = (scrollArea, totalPages) => {
   return sheetsHeight / totalPages;
 };
 
+const isAtMarkerPosition = (scrollArea, marker, totalPages, containerHeight, scrollTopOffset) => {
+  if (!scrollArea || !marker) return false;
+  const pageHeight = getPageHeight(scrollArea, totalPages);
+  const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
+  return Math.abs(scrollArea.scrollTop - targetScroll) < 10;
+};
+
 const App = () => {
   const [scrollTopOffset, setScrollTopOffset] = useState(0.15); // Tweak this value: 0.1 for top, 0.9 for bottom
   const [isScrolling, setIsScrolling] = useState(false);
@@ -72,7 +74,6 @@ const App = () => {
   const scrollTopRef = useRef(null);
   const isScrollingRef = useRef(isScrolling); // Track isScrolling changes
   const [bpm, setBpm] = useState(90); // Default bpm synced with Metronome
-  const [isMetronomePlaying, setIsMetronomePlaying] = useState(false); // Metronome toggle
   const [measuresBetweenMarkers, setMeasuresBetweenMarkers] = useState(''); // Number of measures between markers
   const [showTimerWhileScrolling, setShowTimerWhileScrolling] = useState(true);
   const [isAnnotationMode, setIsAnnotationMode] = useState(false);
@@ -82,7 +83,6 @@ const App = () => {
   const [drawingPaths, setDrawingPaths] = useState([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const canvasRefs = useRef({});
-  const [selectedSticker, setSelectedSticker] = useState(null);
   const [draggedItemIndex, setDraggedItemIndex] = useState(null);
 
   const initializeMarkers = useCallback((numMarkers, pages) => {
@@ -111,52 +111,6 @@ const App = () => {
   const fileInputRef = useRef(null);
   const [sheetImages, setSheetImages] = useState(['/sheet1.jpg', '/sheet2.jpg']);
   const [isUpdatingSheets, setIsUpdatingSheets] = useState(false);
-
-  // Metronome setup with Tone.js Synth
-  const synthRef = useRef(null);
-  const loopRef = useRef(null);
-
-  useEffect(() => {
-    if (!synthRef.current) {
-      synthRef.current = new Tone.Synth({
-        oscillator: { type: "sine" },
-        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
-      }).toDestination();
-      loopRef.current = new Tone.Loop((time) => {
-        synthRef.current.triggerAttackRelease("C4", "8n", time);
-      }, "0:0");
-    }
-
-    return () => {
-      if (loopRef.current) loopRef.current.dispose();
-      if (synthRef.current) synthRef.current.dispose();
-      Tone.Transport.stop();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isMetronomePlaying) {
-      const interval = 60000 / bpm;
-      if (loopRef.current) loopRef.current.interval = `${interval / 1000}s`;
-      Tone.Transport.bpm.value = bpm;
-    }
-  }, [bpm, isMetronomePlaying]);
-
-  const toggleMetronome = () => {
-    if (!isMetronomePlaying) {
-      Tone.start().then(() => {
-        if (loopRef.current && !loopRef.current._active) {
-          loopRef.current.start(0);
-          Tone.Transport.start();
-        }
-        setIsMetronomePlaying(true);
-      }).catch(error => console.error("Failed to start Tone.js:", error));
-    } else {
-      Tone.Transport.stop();
-      if (loopRef.current) loopRef.current.stop();
-      setIsMetronomePlaying(false);
-    }
-  };
 
   const smoothScrollTo = useCallback((element, target, duration, onComplete) => {
     const start = element.scrollTop;
@@ -235,14 +189,6 @@ const App = () => {
   const countdownIntervalRef = useRef(null);
   const timeoutRef = useRef(null);
 
-  const isAtMarkerPosition = (scrollArea, marker, totalPages, containerHeight) => {
-    if (!scrollArea || !marker) return false;
-    const pageHeight = getPageHeight(scrollArea, totalPages);
-    const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
-    const currentScroll = scrollArea.scrollTop;
-    return Math.abs(currentScroll - targetScroll) < 10;
-  };
-
   const scrollToNextMarker = useCallback(() => {
     const scrollArea = scrollAreaRef.current;
     if (!scrollArea || !isScrollingRef.current) {
@@ -273,7 +219,7 @@ const App = () => {
     const containerHeight = window.innerHeight;
     const pageHeight = getPageHeight(scrollArea, totalPages);
 
-    if (isAtMarkerPosition(scrollArea, marker, totalPages, containerHeight)) {
+    if (isAtMarkerPosition(scrollArea, marker, totalPages, containerHeight, scrollTopOffset)) {
       setShowProgress(true);
       setRemainingTime(pauseDuration * 1000);
       console.log('scrollToNextMarker: At marker, showing timer');
@@ -334,7 +280,7 @@ const App = () => {
         }, pauseDuration * 1000);
       });
     }
-  }, [isDragging, currentMarkerIndex, markers, practiceMarkers, isPracticeMode, pauseDuration, smoothScrollTo, totalPages]);
+  }, [isDragging, currentMarkerIndex, markers, practiceMarkers, isPracticeMode, pauseDuration, scrollTopOffset, smoothScrollTo, totalPages]);
 
   useEffect(() => {
     isScrollingRef.current = isScrolling;
@@ -386,7 +332,7 @@ const App = () => {
 
     console.log('useEffect: Scrolling to first marker');
     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION);
-  }, [markers, practiceMarkers, isPracticeMode, isDragging, justFinishedDragging, smoothScrollTo, totalPages]);
+  }, [markers, practiceMarkers, isPracticeMode, isDragging, justFinishedDragging, scrollTopOffset, smoothScrollTo, totalPages]);
 
   useLayoutEffect(() => {
     if (isScrolling) {
@@ -519,7 +465,7 @@ const App = () => {
       setIsScrolling(false);
       isScrollingRef.current = false;
     });
-  }, [currentMarkerIndex, markers, practiceMarkers, isPracticeMode, isDragging, smoothScrollTo, totalPages]);
+  }, [currentMarkerIndex, markers, practiceMarkers, isPracticeMode, isDragging, scrollTopOffset, smoothScrollTo, totalPages]);
 
   const getCurrentMarkerText = () => {
     const activeMarkers = isPracticeMode ? practiceMarkers : markers;
@@ -846,14 +792,6 @@ const App = () => {
     }
   };
 
-  const toggleAnnotationBubble = (id) => {
-    setAnnotations(prev =>
-      prev.map(ann =>
-        ann.id === id ? { ...ann, showBubble: !ann.showBubble } : ann
-      )
-    );
-  };
-
   useEffect(() => {
     const preventTouchScroll = (e) => {
       if (e.target.closest('.sheet-marker')) {
@@ -871,7 +809,7 @@ const App = () => {
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawingPaths.forEach(path => {
-          if (canvas.dataset.page == path.page) {
+          if (Number(canvas.dataset.page) === path.page) {
             ctx.beginPath();
             ctx.moveTo(path.points[0].x * canvas.width, path.points[0].y * canvas.height);
             path.points.forEach(point => {
