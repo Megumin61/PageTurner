@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import Metronome from './Metronome';
 import "./App.css";
+import "./site-footer.css";
 import { getImage } from './db';
 import * as Tone from 'tone'; // Import Tone.js via CDN or manual setup
 import ScoreSidebar from './ScoreSidebar';
@@ -48,6 +49,12 @@ function CircularProgress({ pauseDuration, remainingTime }) {
     </div>
   );
 }
+
+const getPageHeight = (scrollArea, totalPages) => {
+  const sheetsContent = scrollArea?.querySelector('.sheets-content');
+  const sheetsHeight = sheetsContent?.scrollHeight || scrollArea?.scrollHeight || 0;
+  return sheetsHeight / totalPages;
+};
 
 const App = () => {
   const [scrollTopOffset, setScrollTopOffset] = useState(0.15); // Tweak this value: 0.1 for top, 0.9 for bottom
@@ -230,7 +237,7 @@ const App = () => {
 
   const isAtMarkerPosition = (scrollArea, marker, totalPages, containerHeight) => {
     if (!scrollArea || !marker) return false;
-    const pageHeight = scrollArea.scrollHeight / totalPages;
+    const pageHeight = getPageHeight(scrollArea, totalPages);
     const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
     const currentScroll = scrollArea.scrollTop;
     return Math.abs(currentScroll - targetScroll) < 10;
@@ -264,7 +271,7 @@ const App = () => {
     }
 
     const containerHeight = window.innerHeight;
-    const pageHeight = scrollArea.scrollHeight / totalPages;
+    const pageHeight = getPageHeight(scrollArea, totalPages);
 
     if (isAtMarkerPosition(scrollArea, marker, totalPages, containerHeight)) {
       setShowProgress(true);
@@ -374,7 +381,7 @@ const App = () => {
 
     const marker = activeMarkers[0];
     const containerHeight = window.innerHeight;
-    const pageHeight = scrollArea.scrollHeight / totalPages;
+    const pageHeight = getPageHeight(scrollArea, totalPages);
     const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
 
     console.log('useEffect: Scrolling to first marker');
@@ -504,7 +511,7 @@ const App = () => {
     if (!marker) return;
 
     const containerHeight = window.innerHeight;
-    const pageHeight = scrollArea.scrollHeight / totalPages;
+    const pageHeight = getPageHeight(scrollArea, totalPages);
     const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
 
     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION, () => {
@@ -1012,6 +1019,7 @@ const App = () => {
             ref={scrollAreaRef}
             style={{ width: `${sheetWidth}%`, '--sheet-width': `${sheetWidth}%` }}
           >
+            <div className="sheets-content">
             {sheetImages.map((imageUrl, pageNum) => (
               <div key={`page-${pageNum}-${imageUrl}`} className="sheet-container">
                 <img src={imageUrl} alt={`乐谱 ${pageNum + 1}`} className="sheet" />
@@ -1317,6 +1325,16 @@ const App = () => {
                   })}
               </div>
             ))}
+            </div>
+            <footer className="site-footer">
+              <a
+                href="https://beian.miit.gov.cn/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                粤ICP备2021009006号
+              </a>
+            </footer>
           </div>
         )}
         <div className="controlButtons">
@@ -1341,7 +1359,7 @@ const App = () => {
                   if (scrollArea && activeMarkers.length > 0) {
                     const marker = activeMarkers[0];
                     const containerHeight = window.innerHeight;
-                    const pageHeight = scrollArea.scrollHeight / totalPages;
+                    const pageHeight = getPageHeight(scrollArea, totalPages);
                     const targetScroll = pageHeight * (marker.page - 1) + pageHeight * marker.position - containerHeight * scrollTopOffset;
                     smoothScrollTo(scrollArea, targetScroll, FIXED_SCROLL_DURATION);
                   }
